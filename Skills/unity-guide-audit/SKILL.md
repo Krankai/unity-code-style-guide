@@ -102,7 +102,13 @@ Inside `Update`, `FixedUpdate`, `LateUpdate`, and `OnGUI`:
 
 ### Unity 6 API currency
 
-- `FindObjectOfType` / `FindObjectsOfType` (deprecated).
+- `FindObjectOfType` / `FindObjectsOfType` (deprecated) — replace with `FindAnyObjectByType` /
+  `FindObjectsByType`.
+- `FindFirstObjectByType` / any `FindObjectsByType` overload taking a `FindObjectsSortMode` —
+  became Obsolete in **6000.6** (replace with `FindAnyObjectByType` / the parameterless
+  `FindObjectsByType<T>()`, which doesn't exist before 6000.6). Check
+  `UnityCustomInstructions/UnityTechStack.md` for the project's version first — these were the
+  correct forms through 6000.5, so flagging them on an older project is a false positive.
 - `Rigidbody.velocity` / `.drag` / `.angularDrag` — renamed to `linearVelocity` / `linearDamping` /
   `angularDamping`. Same for `Rigidbody2D`.
 - `Graphics.DrawMesh` / `DrawMeshInstanced` / `DrawMeshInstancedIndirect` — replaced by

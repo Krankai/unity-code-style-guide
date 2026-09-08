@@ -200,7 +200,7 @@ public class UIManager : MonoBehaviour { }
 | Symptom | Likely Cause | Solution |
 |---------|--------------|----------|
 | Reference null in `Awake()` | Other object not yet initialized | Move to `Start()` |
-| Reference null in `Start()` | Object created later in scene | Use `FindFirstObjectByType` with null check or events |
+| Reference null in `Start()` | Object created later in scene | Use `FindAnyObjectByType` with null check or events |
 | Camera jitter | Camera in `Update()`, target in `Update()` | Move camera to `LateUpdate()` |
 | Physics inconsistency | Physics logic in `Update()` | Move to `FixedUpdate()` |
 
@@ -649,7 +649,7 @@ Debug.Log($"Min Distance: {m_audioSource.minDistance}");
 Debug.Log($"Max Distance: {m_audioSource.maxDistance}");
 
 // Debug: Distance to listener
-var listener = FindFirstObjectByType<AudioListener>();
+var listener = FindAnyObjectByType<AudioListener>();
 if (listener != null)
 {
     float distance = Vector3.Distance(transform.position, listener.transform.position);

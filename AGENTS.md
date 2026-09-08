@@ -58,8 +58,8 @@ and training data — they are the single most common source of stale generated 
 
 | Don't write | Write |
 |---|---|
-| `FindObjectOfType` | `FindFirstObjectByType` / `FindAnyObjectByType` |
-| `FindObjectsOfType` | `FindObjectsByType(FindObjectsSortMode.None)` |
+| `FindObjectOfType` | `FindAnyObjectByType` |
+| `FindObjectsOfType` | `FindObjectsByType<T>()` † |
 | `Rigidbody.velocity` | `Rigidbody.linearVelocity` |
 | `Rigidbody.drag` / `.angularDrag` | `linearDamping` / `angularDamping` |
 | `Rigidbody2D.velocity` / `.drag` / `.angularDrag` | `linearVelocity` / `linearDamping` / `angularDamping` |
@@ -83,6 +83,14 @@ and training data — they are the single most common source of stale generated 
 ⚠️ `ParticleSystem` modules are structs that write through to native memory. `ps.emission.enabled =
 true` does not compile — copy to a local, mutate the local, and the change applies:
 `var emission = ps.emission; emission.enabled = true;`
+
+† `FindFirstObjectByType` and every `FindObjectsByType` overload taking a `FindObjectsSortMode`
+(including `FindObjectsByType<T>(FindObjectsSortMode.None)`) became Obsolete in **6000.6** — they
+were the correct replacements for `FindObjectOfType`/`FindObjectsOfType` from Unity 2023.1 through
+6000.5, so don't flag them on an older project. The parameterless `FindObjectsByType<T>()` (and
+`FindObjectsByType<T>(FindObjectsInactive)`) did not exist before 6000.6 — check
+`UnityCustomInstructions/UnityTechStack.md` for the project's actual version before applying this
+row, and keep the `FindObjectsSortMode.None` form on 6000.0–6000.5.
 
 ## If you read nothing else
 

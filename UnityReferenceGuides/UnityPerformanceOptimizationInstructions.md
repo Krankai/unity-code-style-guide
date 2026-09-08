@@ -513,11 +513,14 @@ private void UpdateShader(float value)
 # GetComponent and Find Operations
 
 - ❌ **Never call GetComponent in Update** — cache in Awake/Start.
-- ❌ Avoid `FindFirstObjectByType`, `FindObjectsByType` at runtime — they are O(n) scene scans.
-- ℹ️ `FindObjectOfType` / `FindObjectsOfType` are deprecated in Unity 6. The replacements are
-  `FindFirstObjectByType`, `FindAnyObjectByType`, and `FindObjectsByType`. Pass
-  `FindObjectsSortMode.None` unless you actually need instance-ID ordering — sorting is the
-  expensive part of the old API.
+- ❌ Avoid `FindAnyObjectByType`, `FindObjectsByType` at runtime — they are O(n) scene scans.
+- ℹ️ `FindObjectOfType` / `FindObjectsOfType` are deprecated (since 2023.1) — replace with
+  `FindAnyObjectByType` / `FindObjectsByType`. On 6000.6+, also avoid `FindFirstObjectByType` and
+  any `FindObjectsByType` overload taking a `FindObjectsSortMode` — both became Obsolete in 6000.6,
+  in favor of `FindAnyObjectByType` and the parameterless `FindObjectsByType<T>()`. That
+  parameterless overload doesn't exist before 6000.6 — check
+  `UnityCustomInstructions/UnityTechStack.md` for the project's version, and keep
+  `FindObjectsByType<T>(FindObjectsSortMode.None)` on 6000.0–6000.5.
 - ❌ Avoid `GameObject.Find` — string-based, searches entire hierarchy.
 - ✅ Use `[SerializeField]` to assign references in the Inspector.
 - ✅ Use `TryGetComponent` for null-safe lookups (slightly faster than GetComponent + null check).
@@ -528,7 +531,7 @@ private void UpdateShader(float value)
 private void Update()
 {
     var rb = GetComponent<Rigidbody>();                 // Lookup every frame
-    var player = FindFirstObjectByType<Player>();       // Scene scan every frame
+    var player = FindAnyObjectByType<Player>();         // Scene scan every frame
     var enemy = GameObject.Find("Enemy");              // String search every frame
 }
 
@@ -1045,7 +1048,7 @@ When reviewing Unity code, flag these patterns:
 | Anti-Pattern | Impact | Solution |
 |--------------|--------|----------|
 | `GetComponent` in Update | High | Cache in Awake |
-| `FindFirstObjectByType` at runtime | High | Use references or events |
+| `FindAnyObjectByType`/`FindObjectsByType` at runtime | High | Use references or events |
 | `new List<T>()` in Update | High | Pre-allocate and Clear() |
 | String concatenation in loops | Medium | Use StringBuilder |
 | `Camera.main` in Update | Medium | Cache reference |
@@ -1069,7 +1072,7 @@ Look for these patterns that indicate potential issues:
 void Update()
 {
     GetComponent<T>()                    // 🔴 Uncached lookup
-    FindFirstObjectByType<T>()                // 🔴 Scene scan
+    FindAnyObjectByType<T>()                  // 🔴 Scene scan
     new List<T>()                        // 🔴 Allocation
     new T[]                              // 🔴 Allocation
     string + string                      // 🔴 String allocation

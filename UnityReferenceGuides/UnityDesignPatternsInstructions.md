@@ -603,7 +603,7 @@ public class UIRootController : MonoBehaviour
         get
         {
             if (s_instance == null)
-                s_instance = FindFirstObjectByType<UIRootController>();
+                s_instance = FindAnyObjectByType<UIRootController>();
             return s_instance;
         }
     }
@@ -632,7 +632,7 @@ public class AudioManager : MonoBehaviour
         get
         {
             if (s_instance == null)
-                s_instance = FindFirstObjectByType<AudioManager>();
+                s_instance = FindAnyObjectByType<AudioManager>();
             return s_instance;
         }
     }
