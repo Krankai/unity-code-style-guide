@@ -12,7 +12,7 @@ It's inspired by the ebook "Level up your code with design patterns and SOLID" I
 Intent is to provide a quick reference guide for when you need a refresher.
 It complements the [style guide](../UnityStyleGuide.md) by providing more detailed guidance on specific patterns and their usage in Unity projects.
 
-> **Cross-references:** For C# code style and naming conventions, see [UnityStyleGuide.md](../UnityStyleGuide.md). For UI Toolkit patterns including data binding and MVP, see [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md).
+> **Cross-references:** For C# code style and naming conventions, see [UnityStyleGuide.md](../UnityStyleGuide.md). For this project's architecture — MVC layering, VContainer dependency injection, the Singleton policy, MessagePipe, and R3 — see [UnityArchitectureInstructions.md](UnityArchitectureInstructions.md); where an older example in this guide differs, that guide wins. For UI Toolkit patterns including data binding and MVP, see [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md).
 
 Table of Contents
 =================
@@ -32,12 +32,13 @@ Table of Contents
     - [Enum-Based State Pattern](#enum-based-state-pattern)
 - [Template Method Pattern](#template-method-pattern)
 - [Singleton Pattern](#singleton-pattern)
-- [Service Locator / Dependency Injection](#service-locator--dependency-injection)
+- [Dependency Injection / Service Locator](#dependency-injection--service-locator)
 - [Composition over Inheritance](#composition-over-inheritance)
 - [Object Pooling](#object-pooling)
 - [Factory Pattern](#factory-pattern)
 - [Command Pattern](#command-pattern)
 - [Strategy Pattern](#strategy-pattern)
+- [Troubleshooting](#troubleshooting)
 - [Additional Resources](#additional-resources)
 
 ## SOLID Principles
@@ -59,15 +60,15 @@ typeof(PlayerMovement))]
 
 public class Player : MonoBehaviour
 {
-    [SerializeField] private PlayerAudio m_playerAudio;
-    [SerializeField] private PlayerInput m_playerInput;
-    [SerializeField] private PlayerMovement m_playerMovement;
+    [SerializeField] private PlayerAudio _playerAudio;
+    [SerializeField] private PlayerInput _playerInput;
+    [SerializeField] private PlayerMovement _playerMovement;
 
     private void Awake()
     {
-        m_playerAudio = GetComponent<PlayerAudio>();
-        m_playerInput = GetComponent<PlayerInput>();
-        m_playerMovement = GetComponent<PlayerMovement>();
+        _playerAudio = GetComponent<PlayerAudio>();
+        _playerInput = GetComponent<PlayerInput>();
+        _playerMovement = GetComponent<PlayerMovement>();
     }
 }
 
@@ -145,24 +146,24 @@ public abstract class Unit
 
 public class InfantryUnit : Unit
 {
-    private int m_baseDamage = 10;
+    private int _baseDamage = 10;
 
     public override int CalculateDamage()
     {
         // Returns a positive damage value as expected by consumers
-        return m_baseDamage;
+        return _baseDamage;
     }
 }
 
 public class CavalryUnit : Unit
 {
-    private int m_baseDamage = 15;
-    private int m_chargeBonus = 5;
+    private int _baseDamage = 15;
+    private int _chargeBonus = 5;
 
     public override int CalculateDamage()
     {
         // Also returns a positive damage value — substitutable for Unit
-        return m_baseDamage + m_chargeBonus;
+        return _baseDamage + _chargeBonus;
     }
 }
 
@@ -181,8 +182,8 @@ public class RangedUnit : Unit
     public override int CalculateDamage()
     {
         // Returns -1 when out of ammo — callers don't expect negative values
-        if (m_ammo <= 0) return -1;
-        return m_baseDamage;
+        if (_ammo <= 0) return -1;
+        return _baseDamage;
     }
 }
 ```
@@ -240,7 +241,7 @@ public interface IEntity
 - High-level modules should not depend on low-level modules; both should depend on abstractions
 - Depend on interfaces or abstract classes rather than concrete implementations
 
-> A [Service Locator](#service-locator--dependency-injection) is one way to decouple high-level systems from concrete dependencies at runtime.
+> [Dependency injection](#dependency-injection--service-locator) is how this project decouples high-level systems from concrete dependencies at runtime — see [Dependency injection: VContainer](UnityArchitectureInstructions.md#dependency-injection-vcontainer).
 
 ```csharp
 // Good: High-level logic depends on an abstraction
@@ -257,19 +258,20 @@ public class UnityAudioService : IAudioService
     }
 }
 
-// The controller depends on the interface, not the concrete class
-public class CombatController : MonoBehaviour
+// The controller depends on the interface, not the concrete class. VContainer supplies it
+// through the constructor - no static lookup, no Awake() resolve
+public class CombatController
 {
-    private IAudioService m_audioService;
+    private readonly IAudioService _audioService;
 
-    private void Awake()
+    public CombatController(IAudioService audioService)
     {
-        m_audioService = ServiceLocator.Resolve<IAudioService>();
+        _audioService = audioService;
     }
 
-    public void OnAttackLanded()
+    public void HandleAttackLanded()
     {
-        m_audioService.PlaySound("SwordHit");
+        _audioService.PlaySound("SwordHit");
     }
 }
 ```
@@ -281,17 +283,19 @@ public class CombatController : MonoBehaviour
 
 ### Worked Example: A Tile-Based Strategy Game
 
-These patterns are actively used in this codebase. When generating new code, match these existing patterns for consistency.
+These patterns come from the tile-based strategy game this guide was written around. Rows marked **legacy** or **discouraged** are superseded by [UnityArchitectureInstructions.md](UnityArchitectureInstructions.md) for new code; match the rest for consistency. The `StaticGameEvents` calls in the examples further down belong to the legacy event hub. Its class names
+(`UIRootController`, `ArmyController`, `RecruitmentManager`) also predate the rule that `*Controller` names only
+a plain C# MVC Controller — in new code, name a `MonoBehaviour` by its role.
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
-| [Observer Pattern](#observer-pattern) | `StaticGameEvents.cs` | Centralized event bus for inter-system communication |
+| [Observer Pattern](#observer-pattern) | `StaticGameEvents.cs` | Centralized static event bus — **legacy** as the cross-system default (MessagePipe replaces it) |
 | [State Pattern (Enum)](#enum-based-state-pattern) | `UIRootController.cs` | UI state machine with enum + switch |
 | [Template Method](#template-method-pattern) | `UIViewBase.cs` | Base class for all UI Toolkit views |
-| [Singleton](#singleton-pattern) | `UIRootController.cs` | Global access to UI state controller |
-| [Service Locator](#service-locator--dependency-injection) | `ServiceLocator.cs` / `DependencyInjector.cs` | Runtime dependency resolution |
+| [Singleton](#singleton-pattern) | `UIRootController.cs` | Global access to UI state controller — **discouraged**, see the Singleton policy |
+| [Dependency Injection](#dependency-injection--service-locator) | `ServiceLocator.cs` / `DependencyInjector.cs` | Runtime dependency resolution — the hand-rolled locator is **legacy**; VContainer is the default |
 | [Composition](#composition-over-inheritance) | `Tile` + `TileGarrison` etc. | Decomposing tile logic into focused components |
-| ScriptableObject Data | Various `*SO` / `*DataSO` classes | Static configuration data |
+| ScriptableObject Data | Various `*Config` classes | Static configuration data |
 | Data Binding | `[CreateProperty]` + `dataSource` | UI Toolkit automatic UI updates |
 
 ### Reference Patterns
@@ -310,15 +314,68 @@ These patterns are documented for reference and may be useful for future feature
 
 ## Observer Pattern
 
-- ✅ Use the Observer pattern (via C# events) to decouple systems that don't need direct references to each other.
-- ✅ Use static events for game-wide broadcasts (e.g., turn ended, tile selected, resources changed).
-- ✅ Control event invocation through static methods to prevent external code from firing events inappropriately.
-- ✅ Subscribe in `OnEnable()` and always unsubscribe in `OnDisable()` to prevent memory leaks.
+- ✅ Implement the Observer pattern with R3: the publisher owns a private `Subject<T>` and exposes it as a
+  read-only `Observable<T>`; subscribers call `.Subscribe(...)` and attach the result to their own lifetime with
+  `.AddTo(...)`. See [Reactive callbacks: R3](UnityArchitectureInstructions.md#reactive-callbacks-r3).
+- ✅ Only the owner raises the event (`OnNext`). Exposing `Observable<T>` instead of the `Subject<T>` enforces this,
+  which is what the static invoke methods below did by hand.
+- ✅ Use plain `event Action` only where an assembly can't reference R3.
+- ✅ Prefer `Subject`/`Observable` over `UnityEvent`; keep `UnityEvent` for callbacks exposed to the Inspector.
+- ✅ Subscribe in `Start` with `.AddTo(this)`. For a handler that must stop while the component is disabled,
+  subscribe in `OnEnable` into a `CompositeDisposable` and `Clear()` it in `OnDisable`. Never `.AddTo(this)` in
+  `OnEnable` — re-enabling would add a duplicate.
+- ⚠️ For notifications *between* systems, the default is a DI-resolved interface, with MessagePipe for the
+  reserved cases — see [Communication](UnityArchitectureInstructions.md#communication-direct-references-by-default).
+  A static event hub is what MessagePipe replaces.
 - ❌ Avoid using events for tightly coupled systems where a direct method call is simpler.
 
 > See also: [Events](../UnityStyleGuide.md#events) in the style guide for naming conventions and subscription patterns.
 
-**Worked example — a centralized static event hub (`StaticGameEvents.cs`):**
+**Worked example — a tile announcing a population change:**
+
+```csharp
+// Publisher: owns the Subject, exposes only the Observable
+public class Tile : MonoBehaviour
+{
+    private readonly Subject<int> _populationChanged = new();
+    public Observable<int> OnPopulationChanged => _populationChanged;
+
+    private int _population;
+
+    public void ChangePopulation(int delta)
+    {
+        _population += delta;
+        _populationChanged.OnNext(_population);
+    }
+
+    private void OnDestroy() => _populationChanged.Dispose();
+}
+
+// Subscriber: attaches to its own lifetime
+public class TilePopulationLabel : MonoBehaviour
+{
+    [SerializeField] private Tile _tile;
+    [SerializeField] private TMP_Text _label;
+
+    private void Start()
+    {
+        _tile.OnPopulationChanged.Subscribe(HandlePopulationChanged).AddTo(this);
+    }
+
+    private void HandlePopulationChanged(int population)
+    {
+        _label.SetText("{0}", population);
+    }
+}
+```
+
+**Why this pattern:** the tile doesn't know the label exists, and the label's subscription cleans itself up when it
+is destroyed, so there is no `OnDisable` to forget. Compared with `event Action`, the subscription is an
+`IDisposable`, so it also composes with R3's operators (`Where`, `Throttle`, `DistinctUntilChanged`).
+
+**Legacy worked example — a centralized static event hub (`StaticGameEvents.cs`):**
+
+> ⚠️ This is the hub the Architecture guide's [MessagePipe](UnityArchitectureInstructions.md#messagepipe-the-reserved-cases) section replaces. It is kept for reading older code — don't add new cross-system events to it by default. It is also plain `event Action`, and its `OnTurnEnded`-style event names predate the current naming rules (an `event Action` is past tense without `On`; `On` + past tense names an R3 observable). Static events hold their subscribers for the life of the app, so a missed unsubscribe leaks (see [Troubleshooting](#troubleshooting)).
 
 ```csharp
 // StaticGameEvents.cs — Centralized event bus (actual project pattern)
@@ -363,7 +420,7 @@ public class Tile : MonoBehaviour
 }
 ```
 
-**Why this pattern:** A single static event class avoids scattered event declarations across multiple managers. The static invoke methods ensure events are only raised by authorized code paths, not by arbitrary subscribers.
+**Why this pattern:** A single static event class avoids scattered event declarations across multiple managers. The static invoke methods ensure events are only raised by authorized code paths, not by arbitrary subscribers. The trade-off is global mutable state with no owner, which is why the Architecture guide moves broadcast-style events to MessagePipe's typed brokers instead.
 
 ---
 
@@ -382,11 +439,11 @@ Use the State pattern for complex state-dependent behavior, such as character co
 // Base state class
 public abstract class PlayerState
 {
-    protected PlayerController m_controller;
+    protected PlayerStateMachine _stateMachine;
 
-    public PlayerState(PlayerController controller)
+    public PlayerState(PlayerStateMachine stateMachine)
     {
-        m_controller = controller;
+        _stateMachine = stateMachine;
     }
 
     public abstract void Enter();
@@ -397,37 +454,37 @@ public abstract class PlayerState
 // Concrete state
 public class IdleState : PlayerState
 {
-    public IdleState(PlayerController controller) : base(controller) { }
+    public IdleState(PlayerStateMachine stateMachine) : base(stateMachine) { }
 
     public override void Enter() { /* Start idle animation */ }
     public override void Update() { /* Check for input to transition */ }
     public override void Exit() { /* Clean up idle state */ }
 }
 
-// Controller manages state transitions
-public class PlayerController : MonoBehaviour
+// The state machine manages transitions
+public class PlayerStateMachine : MonoBehaviour
 {
-    private PlayerState m_currentState;
-    private IdleState m_idleState;
-    private RunningState m_runningState;
+    private PlayerState _currentState;
+    private IdleState _idleState;
+    private RunningState _runningState;
 
     private void Awake()
     {
-        m_idleState = new IdleState(this);
-        m_runningState = new RunningState(this);
-        m_currentState = m_idleState;
+        _idleState = new IdleState(this);
+        _runningState = new RunningState(this);
+        _currentState = _idleState;
     }
 
     private void Update()
     {
-        m_currentState.Update();
+        _currentState.Update();
     }
 
     public void ChangeState(PlayerState newState)
     {
-        m_currentState.Exit();
-        m_currentState = newState;
-        m_currentState.Enter();
+        _currentState.Exit();
+        _currentState = newState;
+        _currentState.Enter();
     }
 }
 ```
@@ -452,13 +509,13 @@ public enum UIScreen
 
 public class UIRootController : MonoBehaviour
 {
-    [SerializeField] private UIScreen m_currentState = UIScreen.DefaultMapView;
+    [SerializeField] private UIScreen _currentState = UIScreen.DefaultMapView;
 
-    public UIScreen CurrentState => m_currentState;
+    public UIScreen CurrentState => _currentState;
 
     public void ChangeState(UIScreen newState)
     {
-        m_currentState = newState;
+        _currentState = newState;
         StaticGameEvents.InvokeOnUIStateChanged(CurrentState);
         ApplyStateToPanels(newState);
     }
@@ -471,15 +528,15 @@ public class UIRootController : MonoBehaviour
         switch (state)
         {
             case UIScreen.DefaultMapView:
-                SetPanelsActive(m_resourceControllerView, true);
-                SetPanelsActive(m_gameTurnControllerView, true);
-                SetPanelsActive(m_logPanelView, true);
+                SetPanelsActive(_resourceControllerView, true);
+                SetPanelsActive(_gameTurnControllerView, true);
+                SetPanelsActive(_logPanelView, true);
                 break;
 
             case UIScreen.ArmyView:
-                SetPanelsActive(m_resourceControllerView, true);
-                SetPanelsActive(m_commanderView, true);
-                SetPanelsActive(m_armyLowerPanelView, true);
+                SetPanelsActive(_resourceControllerView, true);
+                SetPanelsActive(_commanderView, true);
+                SetPanelsActive(_armyLowerPanelView, true);
                 break;
 
             // Additional states follow the same pattern...
@@ -510,13 +567,13 @@ public class UIRootController : MonoBehaviour
 // UIViewBase.cs — Base class for all UI Toolkit panels (actual project pattern)
 public abstract class UIViewBase : MonoBehaviour
 {
-    protected UIDocument m_uiDocument;
-    protected VisualElement m_rootVisualElement;
+    protected UIDocument _uiDocument;
+    protected VisualElement _rootVisualElement;
 
     protected virtual void Awake()
     {
-        m_uiDocument = GetComponent<UIDocument>();
-        m_rootVisualElement = m_uiDocument.rootVisualElement;
+        _uiDocument = GetComponent<UIDocument>();
+        _rootVisualElement = _uiDocument.rootVisualElement;
         InitializeElements();   // Step 1: subclass caches UI elements
     }
 
@@ -544,13 +601,13 @@ public abstract class UIViewBase : MonoBehaviour
 // Example: A concrete UI panel following the template
 public class TileView : UIViewBase
 {
-    private VisualElement m_tilePanel;
-    private Label m_populationLabel;
+    private VisualElement _tilePanel;
+    private Label _populationLabel;
 
     protected override void InitializeElements()
     {
-        m_tilePanel = m_rootVisualElement.Q<VisualElement>("tile-panel");
-        m_populationLabel = m_rootVisualElement.Q<Label>("population-label");
+        _tilePanel = _rootVisualElement.Q<VisualElement>("tile-panel");
+        _populationLabel = _rootVisualElement.Q<Label>("population-label");
     }
 
     protected override void RegisterCallbacks()
@@ -565,12 +622,12 @@ public class TileView : UIViewBase
 
     public override void ShowPanel(bool show)
     {
-        m_tilePanel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        _tilePanel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
     }
 
     private void HandleTileSelected(Tile tile)
     {
-        m_populationLabel.text = tile.CurrentPopulation.ToString();
+        _populationLabel.text = tile.CurrentPopulation.ToString();
     }
 }
 ```
@@ -583,99 +640,115 @@ public class TileView : UIViewBase
 
 ## Singleton Pattern
 
-- ⚠️ Consider limiting the use of Singletons for smaller scale projects.
-- ✅ Use the Singleton pattern for global managers that need to be accessed from multiple places (e.g., AudioManager, GameManager).
-- ⚠️ Implement thread-safe lazy initialization to ensure the singleton instance is created only when needed.
-- ✅ Use the `s_` prefix for the static instance field, per the [style guide](../UnityStyleGuide.md#fields).
-- ✅ Provide a static Instance property for easy access to the singleton instance.
-- ✅ Use `DontDestroyOnLoad` to persist the singleton across scene loads if necessary.
+- ⚠️ Singletons are **discouraged** on this project. If one is genuinely needed, state its usage and the reason it was
+  necessary in a comment at the declaration — see
+  [Singleton policy](UnityArchitectureInstructions.md#singleton-policy).
+- ✅ Before reaching for one, check whether a service registered `Lifetime.Singleton` in the boot scope solves the same
+  problem: one instance, globally reachable, injected through a constructor instead of a static field. See
+  [Dependency injection: VContainer](UnityArchitectureInstructions.md#dependency-injection-vcontainer).
+- ✅ When a Singleton is still justified (e.g. a static bridge that a third-party API requires by contract), use the `_`
+  prefix for the mutable static instance field, per the [style guide](../UnityStyleGuide.md#fields).
+- ✅ Provide a static `Instance` property and destroy duplicates in `Awake`.
+- ✅ Use `DontDestroyOnLoad` to persist the singleton across scene loads only if it has to.
+- ✅ Reset the static in a `[RuntimeInitializeOnLoadMethod]` so a destroyed instance isn't kept alive across Play
+  sessions when Domain Reload is disabled.
 - ✅ Ensure proper cleanup of resources when the singleton is destroyed.
 
 ```csharp
-// Singleton pattern following the style guide's naming conventions
-public class UIRootController : MonoBehaviour
+// Singleton: the payment plugin's adapter contract requires a static entry point that nothing here
+// constructs, so there is no constructor for VContainer to inject into.
+// (State the usage and the reason at the declaration, as here.)
+public class PaymentCallbackBridge : MonoBehaviour
 {
-    // Use s_ prefix for static fields
-    private static UIRootController s_instance;
+    // Mutable static field: `_` prefix, same as instance fields
+    private static PaymentCallbackBridge _instance;
 
-    public static UIRootController Instance
-    {
-        get
-        {
-            if (s_instance == null)
-                s_instance = FindAnyObjectByType<UIRootController>();
-            return s_instance;
-        }
-    }
+    public static PaymentCallbackBridge Instance => _instance;
 
     private void Awake()
     {
         // Ensure singleton reference is set and handle duplicates
-        if (s_instance != null && s_instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
-        s_instance = this;
-    }
-}
-```
-
-```csharp
-// Singleton with DontDestroyOnLoad for cross-scene persistence
-public class AudioManager : MonoBehaviour
-{
-    private static AudioManager s_instance;
-
-    public static AudioManager Instance
-    {
-        get
-        {
-            if (s_instance == null)
-                s_instance = FindAnyObjectByType<AudioManager>();
-            return s_instance;
-        }
-    }
-
-    private void Awake()
-    {
-        if (s_instance != null && s_instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        s_instance = this;
+        _instance = this;
         DontDestroyOnLoad(gameObject);
+    }
+
+    private void OnDestroy()
+    {
+        if (_instance == this)
+            _instance = null;
+    }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        _instance = null;
     }
 }
 ```
 
 ---
 
-## Service Locator / Dependency Injection
+## Dependency Injection / Service Locator
 
-- ✅ Use a Service Locator to decouple systems from concrete dependencies, improving testability and flexibility.
+- ✅ Default: constructor injection through VContainer. A service is a constructor parameter, registered once in a
+  `LifetimeScope` — not something a class pulls from a static registry. Full pattern in
+  [Dependency injection: VContainer](UnityArchitectureInstructions.md#dependency-injection-vcontainer).
+- ✅ Depend on interfaces (`IAudioService`), not concrete classes — the
+  [Dependency Inversion Principle](#dependency-inversion-principle) applied.
+- ⚠️ A hand-rolled Service Locator is **legacy** here. It is kept below for reading older code and for a project with
+  no DI container. It hides dependencies (any class can resolve anything), fails at runtime rather than at
+  construction, and needs manual cleanup per scene.
+
+```csharp
+// Constructor injection - the dependencies are visible in the signature
+public class RecruitmentController : IRecruitmentController
+{
+    private readonly IGameResources _gameResources;
+    private readonly IGameMapService _gameMapService;
+
+    public RecruitmentController(IGameResources gameResources, IGameMapService gameMapService)
+    {
+        _gameResources = gameResources;
+        _gameMapService = gameMapService;
+    }
+}
+
+// Registered once, in the scope's Configure
+builder.Register<IGameResources, GameResources>(Lifetime.Singleton);
+builder.Register<IGameMapService, GameMapService>(Lifetime.Singleton);
+builder.Register<IRecruitmentController, RecruitmentController>(Lifetime.Scoped);
+```
+
+### Legacy: a hand-rolled Service Locator
+
+If a project has no DI container and uses a locator anyway:
+
 - ✅ Register services during `Awake()` in a centralized injector so they are available by the time `Start()` runs.
 - ✅ Resolve dependencies in `Awake()` of consuming classes.
 - ✅ Clear the registry in `OnDestroy()` to prevent stale references across scene loads.
 - ⚠️ Avoid overusing the Service Locator — it can obscure dependencies if every class resolves everything through it.
 
-**Worked example — a `ServiceLocator` for runtime dependency resolution:**
+**Legacy worked example — a `ServiceLocator` for runtime dependency resolution:**
 
 ```csharp
 // ServiceLocator.cs — Lightweight service registry (actual project code)
 public static class ServiceLocator
 {
-    private static readonly Dictionary<Type, object> s_services = new();
+    private static readonly Dictionary<Type, object> Services = new();
 
     public static void Register<T>(T service) where T : class
     {
-        s_services[typeof(T)] = service;
+        Services[typeof(T)] = service;
     }
 
     public static T Resolve<T>() where T : class
     {
-        if (s_services.TryGetValue(typeof(T), out object service))
+        if (Services.TryGetValue(typeof(T), out object service))
         {
             return service as T;
         }
@@ -684,12 +757,12 @@ public static class ServiceLocator
 
     public static void Unregister<T>() where T : class
     {
-        s_services.Remove(typeof(T));
+        Services.Remove(typeof(T));
     }
 
     public static void Clear()
     {
-        s_services.Clear();
+        Services.Clear();
     }
 }
 ```
@@ -700,17 +773,17 @@ public static class ServiceLocator
 // DependencyInjector.cs — Registers scene services at startup (actual project code)
 public class DependencyInjector : MonoBehaviour
 {
-    [SerializeField] private GameResources m_gameResources;
-    [SerializeField] private RecruitmentManager m_recruitmentManager;
-    [SerializeField] private BuildQueueService m_tileConstructionManager;
-    [SerializeField] private GameMapController m_gameMapController;
+    [SerializeField] private GameResources _gameResources;
+    [SerializeField] private RecruitmentManager _recruitmentManager;
+    [SerializeField] private BuildQueueService _tileConstructionManager;
+    [SerializeField] private GameMapController _gameMapController;
 
     private void Awake()
     {
-        ServiceLocator.Register(m_gameResources);
-        ServiceLocator.Register(m_recruitmentManager);
-        ServiceLocator.Register(m_tileConstructionManager);
-        ServiceLocator.Register(m_gameMapController);
+        ServiceLocator.Register(_gameResources);
+        ServiceLocator.Register(_recruitmentManager);
+        ServiceLocator.Register(_tileConstructionManager);
+        ServiceLocator.Register(_gameMapController);
     }
 
     private void OnDestroy()
@@ -725,14 +798,14 @@ public class DependencyInjector : MonoBehaviour
 ```csharp
 public class RecruitmentManager : MonoBehaviour
 {
-    private GameResources m_gameResources;
-    private GameMapController m_gameMapController;
+    private GameResources _gameResources;
+    private GameMapController _gameMapController;
 
     private void Awake()
     {
         // Resolve dependencies registered by DependencyInjector
-        m_gameResources = ServiceLocator.Resolve<GameResources>();
-        m_gameMapController = ServiceLocator.Resolve<GameMapController>();
+        _gameResources = ServiceLocator.Resolve<GameResources>();
+        _gameMapController = ServiceLocator.Resolve<GameMapController>();
     }
 }
 ```
@@ -752,12 +825,12 @@ public class RecruitmentManager : MonoBehaviour
 // Tile.cs — The primary tile component delegates to focused sub-components
 public class Tile : MonoBehaviour
 {
-    [SerializeField] private TileGarrison m_tileMilitary;
+    [SerializeField] private TileGarrison _tileMilitary;
 
     private void Awake()
     {
         // Wire sibling components via GetComponent
-        m_tileMilitary = GetComponent<TileGarrison>();
+        _tileMilitary = GetComponent<TileGarrison>();
     }
 
     // Tile handles population, happiness, and taxation
@@ -770,13 +843,13 @@ public class Tile : MonoBehaviour
 // TileGarrison.cs — Focused on military/recruitment concerns only
 public class TileGarrison : MonoBehaviour
 {
-    private Tile m_tile;
-    [SerializeField] private int m_currentRecruits;
-    [SerializeField] private int m_newRecruitsPerTurn = 5;
+    private Tile _tile;
+    [SerializeField] private int _currentRecruits;
+    [SerializeField] private int _newRecruitsPerTurn = 5;
 
     private void Awake()
     {
-        m_tile = GetComponent<Tile>();
+        _tile = GetComponent<Tile>();
     }
 
     private void OnEnable()
@@ -791,7 +864,7 @@ public class TileGarrison : MonoBehaviour
 
     public void IncreaseRecruitPoolEndOfTurn()
     {
-        m_currentRecruits += m_newRecruitsPerTurn;
+        _currentRecruits += _newRecruitsPerTurn;
     }
 }
 ```
@@ -832,13 +905,13 @@ using UnityEngine.Pool;
 
 public class BulletPool : MonoBehaviour
 {
-    [SerializeField] private Bullet m_bulletPrefab;
-    private ObjectPool<Bullet> m_pool;
+    [SerializeField] private Bullet _bulletPrefab;
+    private ObjectPool<Bullet> _pool;
 
     private void Awake()
     {
-        m_pool = new ObjectPool<Bullet>(
-            createFunc: () => Instantiate(m_bulletPrefab),
+        _pool = new ObjectPool<Bullet>(
+            createFunc: () => Instantiate(_bulletPrefab),
             actionOnGet: bullet => bullet.gameObject.SetActive(true),
             actionOnRelease: bullet => bullet.gameObject.SetActive(false),
             actionOnDestroy: bullet => Destroy(bullet.gameObject),
@@ -850,12 +923,12 @@ public class BulletPool : MonoBehaviour
 
     public Bullet GetFromPool()
     {
-        return m_pool.Get();
+        return _pool.Get();
     }
 
     public void ReturnToPool(Bullet bullet)
     {
-        m_pool.Release(bullet);
+        _pool.Release(bullet);
     }
 }
 ```
@@ -897,9 +970,9 @@ public void ProcessNearbyEnemies(Vector3 position, float radius)
 // Example: Factory method for creating army units from ScriptableObject data
 public class ArmyController : MonoBehaviour
 {
-    [SerializeField] private List<ArmyUnitData> m_activeUnits = new();
+    [SerializeField] private List<ArmyUnitData> _activeUnits = new();
 
-    public void RecruitUnit(ArmyUnitSO unitData)
+    public void RecruitUnit(ArmyUnitConfig unitData)
     {
         // Factory logic: create runtime data from static configuration
         var newUnit = new ArmyUnitData(unitData);
@@ -907,7 +980,7 @@ public class ArmyController : MonoBehaviour
         newUnit.CurrentMorale = 100;
         newUnit.CurrentSquadSize = unitData.SizeSquad;
 
-        m_activeUnits.Add(newUnit);
+        _activeUnits.Add(newUnit);
     }
 }
 ```
@@ -916,17 +989,17 @@ public class ArmyController : MonoBehaviour
 // Example: A more formal factory for spawning GameObjects
 public class EnemyFactory : MonoBehaviour
 {
-    [SerializeField] private GameObject m_infantryPrefab;
-    [SerializeField] private GameObject m_cavalryPrefab;
-    [SerializeField] private GameObject m_archerPrefab;
+    [SerializeField] private GameObject _infantryPrefab;
+    [SerializeField] private GameObject _cavalryPrefab;
+    [SerializeField] private GameObject _archerPrefab;
 
     public GameObject CreateEnemy(UnitCategory category, Vector3 spawnPosition)
     {
         GameObject prefab = category switch
         {
-            UnitCategory.Infantry => m_infantryPrefab,
-            UnitCategory.Cavalry  => m_cavalryPrefab,
-            UnitCategory.Ranged   => m_archerPrefab,
+            UnitCategory.Infantry => _infantryPrefab,
+            UnitCategory.Cavalry  => _cavalryPrefab,
+            UnitCategory.Ranged   => _archerPrefab,
             _ => throw new ArgumentException($"Unknown unit category: {category}")
         };
 
@@ -956,25 +1029,25 @@ public interface ICommand
 // Concrete command: move an army
 public class MoveArmyCommand : ICommand
 {
-    private readonly ArmyController m_army;
-    private readonly Vector3 m_targetPosition;
-    private Vector3 m_previousPosition;
+    private readonly ArmyController _army;
+    private readonly Vector3 _targetPosition;
+    private Vector3 _previousPosition;
 
     public MoveArmyCommand(ArmyController army, Vector3 targetPosition)
     {
-        m_army = army;
-        m_targetPosition = targetPosition;
+        _army = army;
+        _targetPosition = targetPosition;
     }
 
     public void Execute()
     {
-        m_previousPosition = m_army.transform.position;
-        m_army.transform.position = m_targetPosition;
+        _previousPosition = _army.transform.position;
+        _army.transform.position = _targetPosition;
     }
 
     public void Undo()
     {
-        m_army.transform.position = m_previousPosition;
+        _army.transform.position = _previousPosition;
     }
 }
 ```
@@ -983,32 +1056,32 @@ public class MoveArmyCommand : ICommand
 // Command invoker with undo/redo stacks
 public class CommandInvoker
 {
-    private readonly Stack<ICommand> m_undoStack = new();
-    private readonly Stack<ICommand> m_redoStack = new();
+    private readonly Stack<ICommand> _undoStack = new();
+    private readonly Stack<ICommand> _redoStack = new();
 
     public void ExecuteCommand(ICommand command)
     {
         command.Execute();
-        m_undoStack.Push(command);
-        m_redoStack.Clear();
+        _undoStack.Push(command);
+        _redoStack.Clear();
     }
 
     public void Undo()
     {
-        if (m_undoStack.Count == 0) return;
+        if (_undoStack.Count == 0) return;
 
-        var command = m_undoStack.Pop();
+        var command = _undoStack.Pop();
         command.Undo();
-        m_redoStack.Push(command);
+        _redoStack.Push(command);
     }
 
     public void Redo()
     {
-        if (m_redoStack.Count == 0) return;
+        if (_redoStack.Count == 0) return;
 
-        var command = m_redoStack.Pop();
+        var command = _redoStack.Pop();
         command.Execute();
-        m_undoStack.Push(command);
+        _undoStack.Push(command);
     }
 }
 ```
@@ -1039,22 +1112,22 @@ public class DirectMovement : IMovementStrategy
 
 public class PatrolMovement : IMovementStrategy
 {
-    private readonly Vector3[] m_waypoints;
-    private int m_currentWaypointIndex;
+    private readonly Vector3[] _waypoints;
+    private int _currentWaypointIndex;
 
     public PatrolMovement(Vector3[] waypoints)
     {
-        m_waypoints = waypoints;
+        _waypoints = waypoints;
     }
 
     public void Move(Transform transform, Vector3 target, float speed)
     {
-        var waypoint = m_waypoints[m_currentWaypointIndex];
+        var waypoint = _waypoints[_currentWaypointIndex];
         transform.position = Vector3.MoveTowards(transform.position, waypoint, speed * Time.deltaTime);
 
         if (Vector3.Distance(transform.position, waypoint) < 0.1f)
         {
-            m_currentWaypointIndex = (m_currentWaypointIndex + 1) % m_waypoints.Length;
+            _currentWaypointIndex = (_currentWaypointIndex + 1) % _waypoints.Length;
         }
     }
 }
@@ -1062,21 +1135,21 @@ public class PatrolMovement : IMovementStrategy
 
 ```csharp
 // Context: unit uses a strategy that can be swapped at runtime
-public class ArmyMovementController : MonoBehaviour
+public class ArmyMover : MonoBehaviour
 {
-    [SerializeField] private float m_moveSpeed = 5f;
+    [SerializeField] private float _moveSpeed = 5f;
 
-    private IMovementStrategy m_movementStrategy;
-    private Vector3 m_targetPosition;
+    private IMovementStrategy _movementStrategy;
+    private Vector3 _targetPosition;
 
     public void SetMovementStrategy(IMovementStrategy strategy)
     {
-        m_movementStrategy = strategy;
+        _movementStrategy = strategy;
     }
 
     private void Update()
     {
-        m_movementStrategy?.Move(transform, m_targetPosition, m_moveSpeed);
+        _movementStrategy?.Move(transform, _targetPosition, _moveSpeed);
     }
 }
 ```
@@ -1097,7 +1170,13 @@ The static field kept a reference to a destroyed object. Reset it in a
 
 **An event fires twice.**
 Subscribed in both `Awake` and `OnEnable`, so re-enabling adds a second handler. Subscribe only in
-`OnEnable` and unsubscribe in `OnDisable`.
+`OnEnable` and unsubscribe in `OnDisable`. The R3 version of the same bug is `.AddTo(this)` inside
+`OnEnable`: it isn't undone on disable, so each re-enable adds a subscription. Subscribe in `Start`, or clear
+a `CompositeDisposable` in `OnDisable`.
+
+**`ObjectDisposedException` from a Subject.**
+The owner disposed it in `OnDestroy`, and something raised or subscribed afterwards. Only the owner should call
+`OnNext`, and only while it is alive; a subscriber that may outlive the publisher must not subscribe to it late.
 
 **An event handler runs on a destroyed object.**
 A missed unsubscribe on a static or long-lived event. The publisher is holding the delegate — and
@@ -1112,13 +1191,15 @@ always visible immediately.
 Something took an object and never released it. Set `collectionCheck: true` in development — it
 throws when an object is released twice, which usually reveals the leak.
 
-**A service resolves to null through a Service Locator.**
+**A service resolves to null through the legacy Service Locator.**
 Registration order. The consumer's `Awake` ran before the provider's. Register in a bootstrap scene
-that loads first, or resolve lazily in `Start` rather than `Awake`.
+that loads first, or resolve lazily in `Start` rather than `Awake`. VContainer doesn't have this failure
+mode — a missing registration throws a `VContainerException` naming the type instead of returning null.
 
 ## Additional Resources
 
 - [Level Up Your Code with Design Patterns and SOLID](https://unity.com/resources/design-patterns-solid-ebook) — Unity ebook
 - [UnityStyleGuide.md](../UnityStyleGuide.md) — C# style guide, naming conventions, and coding patterns
+- [UnityArchitectureInstructions.md](UnityArchitectureInstructions.md) — MVC layering, VContainer, Singleton policy, MessagePipe, R3
 - [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md) — UI Toolkit reference including data binding and MVP pattern
 - [Game Programming Patterns](https://gameprogrammingpatterns.com/) — Robert Nystrom's free online book

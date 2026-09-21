@@ -15,19 +15,25 @@ ones worth discussing before you adopt the guide wholesale:
 
 | Convention | My choice | Common alternative |
 |---|---|---|
-| Private field prefix | `m_camelCase` | `_camelCase` or bare `camelCase` |
-| Constant prefix | `k_camelCase` for private consts | `PascalCase` or `SCREAMING_CASE` |
-| Static field prefix | `s_camelCase` | no prefix |
+| Private field prefix | `_camelCase` | `m_camelCase` or bare `camelCase` |
+| Mutable static field prefix | `_camelCase`, same as instance fields | `s_camelCase` |
 | Brace style | Allman (brace on its own line) | K&R (brace on the same line) |
 | Line width | 120–140 characters | 80, 100, or unlimited |
 | `private` modifier | Always written, even though it's implicit | Omitted |
-| ScriptableObject naming | `DataSO` suffix | no suffix |
+| ScriptableObject naming | `Config` suffix | no suffix |
+| ScriptableObject menu path | `"<Category>/<Asset Name>"` | Unity default, or a flat menu |
+| Asset filenames | Folder-based, no type-tag prefixes | `T_`, `M_`, `SFX_` prefixes |
 | Method verbs | `Handle` for event callbacks, `Process` for game-flow logic | `On`, or no distinction |
+| Async method naming | `Task`-prefix | `Async`-suffix, or no convention |
+| Coroutine naming | `Routine`-suffix | `Co`-suffix, or no convention |
+| Event naming | R3 observable `On` + past tense (`OnDoorOpened`); `event Action` fallback past tense (`DoorOpened`) with an `On` raiser | `On`-prefixed events, or past tense everywhere |
+| Class suffixes | `*Controller` only for the plain C# MVC Controller; a `MonoBehaviour` is named by its role (`*View`, `PlayerMover`) | `*Controller` on any `MonoBehaviour` |
 
-Everything else — PascalCase types and methods, `is`/`has`/`can` booleans, `I`-prefixed interfaces,
-caching in `Awake`, unsubscribing in `OnDisable` — is standard practice, not preference.
+Everything else — PascalCase types, methods and constants, `is`/`has`/`can` booleans, `I`-prefixed interfaces,
+caching in `Awake`, giving every event subscription a guaranteed end — is standard practice, not preference.
 
-> **Tech stack assumptions** (Unity version, render pipeline, input and UI system) live in
+> **Tech stack assumptions** (Unity version, render pipeline, input and UI system, and the async, DI and event
+> packages) live in
 > [`UnityCustomInstructions/UnityTechStack.md`](UnityCustomInstructions/UnityTechStack.md).
 > That is the first file to edit when you adopt this guide.
 
@@ -41,6 +47,7 @@ Table of contents:
   - [Using statements](#using-statements)
     - [Namespaces](#namespaces)
   - [Fields](#fields)
+  - [Constants and static readonly values](#constants-and-static-readonly-values)
   - [Properties](#properties)
   - [Events](#events)
     - [Subscribing and unsubscribing to events](#subscribing-and-unsubscribing-to-events)
@@ -65,7 +72,7 @@ Table of contents:
   - [Avoid nesting if statements](#avoid-nesting-if-statements)
   - [Managing string allocations](#managing-string-allocations)
   - [Collection type selection](#collection-type-selection)
-  - [Async & Awaitable usage](#async--awaitable-usage)
+  - [Async & UniTask usage](#async--unitask-usage)
   - [Scriptable Objects](#scriptable-objects)
   - [Animation parameters, layers, tags, sorting layers, and input action names](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)
   - [Debugging](#debugging)
@@ -118,13 +125,13 @@ public void ProcessItems ( List<Item>items,int startIndex ) { for(int i=startInd
 ```csharp
 #region Animation Event Methods
 // This method is called from animation events to signal landing
-public void OnLand()
+public void HandleLand()
 {
-    Debug.Log("OnLand called from animation event");
+    Debug.Log("HandleLand called from animation event");
 }
 
 // This method is called from animation events
-public void OnFootstep()
+public void HandleFootstep()
 {
     // This method can be used to play footstep sounds
     Debug.Log("Footstep event triggered");
@@ -154,7 +161,7 @@ if (itemCount < processingThreshold)
 }
 
 [Tooltip("Maximum distance the player can travel in one frame")]
-[SerializeField] private float m_maxDeltaMovement = 10f;
+[SerializeField] private float _maxDeltaMovement = 10f;
 
 /// <summary>
 /// Applies damage and raises <see cref="HealthChanged"/> if the value actually changed.
@@ -209,6 +216,9 @@ using MyGameProject.Utilities;
 - ✅ Use namespaces to ensure that your classes, interfaces, enums, etc., won't conflict with existing ones from other namespaces or the global namespace.
 - ✅ Use PascalCase, without special symbols or underscores.
 - ✅ Create sub-namespaces with the dot (`.`) operator, e.g., `MyApplication.GameFlow`, `MyApplication.AI`, etc.
+- ✅ Use a single-part root named after the product (`MyGame`), then one sub-namespace per feature folder. A script in `Characters/` lives in `MyGame.Characters`, so the namespace can always be worked out from the file's path.
+- ✅ Editor-only code takes an `.Editor` suffix on its namespace: `MyGame.Characters.Editor`.
+- ℹ️ Set `rootNamespace` on each assembly definition and Unity inserts the right namespace into new scripts. See [Assembly Definitions](UnityReferenceGuides/UnityAssemblyDefinitionsInstructions.md#rootnamespace).
 
 ```csharp
 namespace MyGame.Characters
@@ -218,52 +228,89 @@ namespace MyGame.Characters
         // Class implementation
     }
 }
+
+// Characters/Editor/PlayerEditor.cs - editor-only code gets the .Editor suffix
+namespace MyGame.Characters.Editor
+{
+    public class PlayerEditor : UnityEditor.Editor
+    {
+        // Custom inspector
+    }
+}
 ```
 
 ## Fields
 - ✅ Don't omit the `private` accessor even though it's technically implicit. It provides context about the intent.
-- ✅ Use `m_` for private fields, `k_` for private constants, and `s_` for static fields. All three use
-  **camelCase after the prefix** (`m_health`, `k_maxCount`, `s_sharedCount`).
-- ⚠️ **Exception:** `public const` members of a static lookup class are API surface, so they use
-  PascalCase without a prefix (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
-  The `k_` prefix is for private constants.
+- ✅ Use a `_` prefix with **camelCase** for private fields, including mutable static fields (`_health`, `_sharedCount`).
+- ✅ Use **PascalCase with no prefix** for constants and `static readonly` values, whatever their accessibility (`MaxCount`, `SpeedHash`).
+  Immutable values read as named data rather than state that can change. Static lookup classes follow the same rule
+  (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
 - ✅ Use descriptive names that clearly indicate the field's purpose.
 - ❌ Avoid abbreviations unless they are widely understood (e.g., `UI`, `ID`).
-- ✅ Include units in the name if applicable (e.g., `m_speedInMetersPerSecond`).
-- ✅ Prefix Boolean fields with verbs like `is`, `has`, or `can` for clarity (e.g., `m_isActive`, `m_hasPermission`).
-- ❌ Avoid redundancy by not repeating the class name in field names (e.g., use `m_health` instead of `m_playerHealth` in a `Player` class).
+- ✅ Include units in the name if applicable (e.g., `_speedInMetersPerSecond`).
+- ✅ Prefix Boolean fields with verbs like `is`, `has`, or `can` for clarity (e.g., `_isActive`, `_hasPermission`).
+- ❌ Avoid redundancy by not repeating the class name in field names (e.g., use `_health` instead of `_playerHealth` in a `Player` class).
 - ✅ Expose fields in the Inspector with `[SerializeField]`, keeping the field itself private.
 - ✅ Use properties when you need to access them from other classes.
 - ❌ Avoid redundant initializers. Value types default to `0` and reference types to `null`; writing
   that out adds noise.
 
 ```csharp
-// Use `m_` prefix for private fields
-private int m_health;
+// Use `_` prefix for private fields
+private int _health;
 
-// Static field with s_ prefix
-private static int s_sharedCount;
+// Mutable static field: same `_` prefix as instance fields
+private static int _sharedCount;
 
-// Private constant with k_ prefix
-private const int k_maxCount = 100;
+// Constants and static readonly values: PascalCase, no prefix
+private const int MaxCount = 100;
+private static readonly int SpeedHash = Animator.StringToHash("Speed");
 
 // Use [SerializeField] rather than exposing your field publicly; keep it private or make it a property
-[SerializeField] private int m_startingHealth;
+[SerializeField] private int _startingHealth;
 
 // Specify the unit used to eliminate guessing. Favor readability over brevity
-private int m_elapsedTimeInHours;
-private int m_elapsedTimeInDays;
-private int m_elapsedTimeInSeconds;
+private int _elapsedTimeInHours;
+private int _elapsedTimeInDays;
+private int _elapsedTimeInSeconds;
 
 // Prefix Booleans with a verb like "is" to make their meaning apparent
-[SerializeField] private bool m_isPlayerDead;
+[SerializeField] private bool _isPlayerDead;
+```
+
+### Constants and static readonly values
+- ✅ Name every constant in **PascalCase with no prefix**, whatever its accessibility: `private const int MaxRetries`, `public const string Player`. This is the standard C# convention, not a personal preference.
+- ✅ Name `static readonly` values the same way: cached hashes, shader property IDs, profiler markers and other values assigned once and never reassigned (`SpeedHash`, `BaseColorId`, `UpdateMarker`). They read as named data, not as state that can change.
+- ❌ Don't add a prefix (`k_maxRetries`) and don't use SCREAMING_CASE (`MAX_RETRIES`).
+- ✅ Static lookup classes for tags, layers and input action names follow the same rule (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
+- ⚠️ A static field that *does* change is state, not a constant. It takes the `_` prefix like any other field (`_instance`, `_score`) and needs a reset when Domain Reload is disabled. See [Domain reload and static state](UnityReferenceGuides/UnityScenesAndLifecycleInstructions.md#domain-reload-and-static-state).
+- ⚠️ Avoid making a collection `static readonly` if it's added to and removed from constantly — the PascalCase
+  name will read like a constant. Declare it as a plain `static` with the `_` prefix instead (or, better, as an
+  instance field). The exception is a collection where `static readonly` has a real performance benefit, such as
+  a pre-allocated buffer that's reused with `Clear()`.
+
+```csharp
+// Constants: PascalCase, no prefix, any accessibility
+private const int MaxRetries = 3;
+public const string Player = "Player";   // e.g. on a static lookup class: Tags.Player
+
+// static readonly values: PascalCase as well
+private static readonly int SpeedHash = Animator.StringToHash("Speed");
+private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+// Mutable static state: `_` prefix, same as instance fields
+private static int _score;
+
+// Avoid
+private const int k_maxRetries = 3;      // prefix
+private const int MAX_RETRIES = 3;       // SCREAMING_CASE
 ```
 
 ### Properties
 - ✅ Place properties after fields and before MonoBehaviour methods as per your class organization.
 - ✅ Use PascalCase for properties and avoid prefixes/suffixes.
 - ✅ Prefer predicate names for boolean properties (Is/Has/Can), e.g., `IsGrounded`, `HasHealthPack`, `CanJump`.
-- ❌ Don't try to serialize a property directly. Use `[SerializeField] private T m_field` plus a public
+- ❌ Don't try to serialize a property directly. Use `[SerializeField] private T _field` plus a public
   property that returns or validates it.
 - ✅ Use `[field: SerializeField]` on an auto-property when you want the Inspector field without writing
   a backing field by hand. It's the concise option — note the Inspector label will show the compiler-
@@ -277,16 +324,16 @@ private int m_elapsedTimeInSeconds;
 
 ```csharp
 // Private backing field
-private int m_maxHealth;
+private int _maxHealth;
 
 // Read-only property
-public int MaxHealthReadOnly => m_maxHealth;
+public int MaxHealthReadOnly => _maxHealth;
 
 // Property with full implementation
 public int MaxHealth
 {
-    get => m_maxHealth;
-    set => m_maxHealth = value;
+    get => _maxHealth;
+    set => _maxHealth = value;
 }
 
 // Auto-implemented property
@@ -300,46 +347,61 @@ public Vector2 MovementInput
 {
     set
     {
-        m_forwardMovementInput = value;
+        _forwardMovementInput = value;
         Debug.Log("Movement input set.");
     }
 }
 ```
 
 ### Events
-- ✅ Use `event Action` or `event Action<T>` for declaring events for the majority of cases.
-- ✅ Use `UnityEvent` only when you need to expose callbacks to the Inspector. I generally avoid
-  `UnityEvent` for code-only events as `Action` is more lightweight and flexible.
-- ✅ Follow the C# event naming convention: use past tense verbs (e.g., `DoorOpened`, not `OnDoorOpen`).
-- ✅ Use the `On` prefix for methods that raise events (e.g., `OnDoorOpened`), and use past-tense verbs
-  for the event name itself (e.g., `DoorOpened`).
-- ✅ Make the raiser `protected virtual` when the class may be subclassed, so derived types can extend
-  rather than replace the behaviour. Use `private` when it won't be.
+- ✅ Use R3 as the default for events and notifications: the owner keeps a private `Subject<T>` and exposes it as a
+  read-only `Observable<T>`; subscribers attach with `.Subscribe(...).AddTo(...)`. This is also how the
+  observer pattern is implemented here — see
+  [UnityArchitectureInstructions.md](UnityReferenceGuides/UnityArchitectureInstructions.md#reactive-callbacks-r3).
+- ✅ Expose `Observable<T>`, never the `Subject<T>` — only the owner may raise it. Use `Subject<Unit>` (and
+  `OnNext(Unit.Default)`) for an event with no payload.
+- ✅ Name the observable `On` + past tense (`OnDoorOpened`), the private subject `_` + past tense (`_doorOpened`),
+  and the subscriber's handler `Handle*` (`HandleDoorOpened`). There is no raiser method: the owner calls
+  `_doorOpened.OnNext(...)` directly.
+- ✅ Use a custom payload type for events that carry multiple values. A `readonly struct` avoids the allocation a
+  class-based `EventArgs` would incur — worth it for anything raised frequently.
+- ✅ The owner disposes its `Subject` in `OnDestroy`. Raising or subscribing after that throws
+  `ObjectDisposedException`.
+- ✅ Prefer `Subject`/`Observable` over `UnityEvent` for every code-driven event. Use `UnityEvent` only for
+  callbacks that must be exposed to the Inspector, for designers to wire.
+- ✅ To consume a Unity component's `UnityEvent` (e.g. `Button.onClick`) from code, convert it with R3 —
+  `OnClickAsObservable()`, or `.AsObservable(destroyCancellationToken)` — instead of `AddListener`.
 - ✅ Use the observer pattern to decouple systems and reduce dependencies (e.g., firing events for UI to update instead of direct references to UI components).
-- ✅ Use the null-conditional operator (`?.`) when raising events to avoid null reference exceptions.
-- ✅ Use a custom event-argument type for events that carry multiple values. A readonly `struct` avoids
-  the allocation that a class-based `EventArgs` would incur — worth it for anything raised frequently.
 - ⚠️ Avoid overusing events for tightly coupled systems where direct method calls would be simpler.
     - ✅ *Use Events*: When you need to decouple systems that don't need to know about each other directly (e.g., broadcasting game state changes to multiple systems). For example, when a GameManager needs to notify multiple unrelated systems (e.g., UI, Audio, Analytics) about a game state change.
-    - ❌ *Avoid Events*: When the systems are tightly coupled, and a direct method call or dependency injection is simpler and more efficient. For example, when a PlayerController directly controls a Weapon.
+    - ❌ *Avoid Events*: When the systems are tightly coupled, and a direct method call or dependency injection is simpler and more efficient. For example, when a `PlayerCombat` component directly controls a Weapon.
+    - ℹ️ *Across features*, the default is a directly injected interface rather than an event. The
+      GameManager-to-UI/Audio/Analytics fan-out above is one of the few cases where MessagePipe
+      (optional) fits — see [UnityArchitectureInstructions.md](UnityReferenceGuides/UnityArchitectureInstructions.md#communication-direct-references-by-default).
 
 ```csharp
-// Event declarations
-public event Action DoorOpened;         // Use past tense verbs for event names
-public event Action<int> PointsScored;
-public event Action<DamageInfo> DamageTaken;
+// Publisher: private Subject, public read-only Observable
+private readonly Subject<Unit> _doorOpened = new();
+private readonly Subject<int> _pointsScored = new();
+private readonly Subject<DamageInfo> _damageTaken = new();
 
-// Event raising methods
-protected virtual void OnDoorOpened()
+public Observable<Unit> OnDoorOpened => _doorOpened;         // On + past tense for the observable
+public Observable<int> OnPointsScored => _pointsScored;
+public Observable<DamageInfo> OnDamageTaken => _damageTaken;
+
+// Raising: no wrapper method, the owner calls OnNext directly
+private void OpenDoor()
 {
-    // Use the null-conditional operator to avoid null reference exceptions
-    DoorOpened?.Invoke();
+    _isOpen = true;
+    _doorOpened.OnNext(Unit.Default);
 }
 
-// When passing data with events
-protected virtual void OnPointsScored(int points)
+// The owner disposes its subjects when it is destroyed
+private void OnDestroy()
 {
-    PointsScored?.Invoke(points);
+    _doorOpened.Dispose();
+    _pointsScored.Dispose();
+    _damageTaken.Dispose();
 }
 
 // Readonly struct for complex event data - no allocation per raise
@@ -356,20 +418,92 @@ public readonly struct DamageInfo
 }
 ```
 
+#### Fallback: `event Action`
+Use plain C# events only where R3 can't be referenced (for example an assembly that must stay free of the
+dependency). Everything above about decoupling still applies; the conventions differ:
+
+- ✅ Declare with `event Action` or `event Action<T>`. Use past-tense verbs for the event name (`DoorOpened`, not
+  `OnDoorOpen`).
+- ✅ Use the `On` prefix for the method that raises the event (`OnDoorOpened`).
+- ✅ Make the raiser `protected virtual` when the class may be subclassed, so derived types can extend rather than
+  replace the behaviour. Use `private` when it won't be.
+- ✅ Use the null-conditional operator (`?.`) when raising events to avoid null reference exceptions.
+
+```csharp
+public event Action DoorOpened;         // Past tense, no On prefix
+public event Action<int> PointsScored;
+
+protected virtual void OnDoorOpened()   // On prefix on the raiser
+{
+    DoorOpened?.Invoke();
+}
+
+protected virtual void OnPointsScored(int points)
+{
+    PointsScored?.Invoke(points);
+}
+```
+
 #### Subscribing and unsubscribing to events
-- ✅ Subscribe in `OnEnable` and always unsubscribe in `OnDisable` to prevent memory leaks.
-- ✅ Avoid using lambda expressions when subscribing to events as it makes unsubscribing impossible unless you store the lambda in a variable first.
+- ✅ R3: subscribe in `Start` with `.AddTo(this)`. The subscription ends when the object is destroyed.
+- ✅ R3 subscription that must stop while the component is disabled: subscribe in `OnEnable` into a
+  `CompositeDisposable` field and `Clear()` it in `OnDisable`.
+- ❌ Never `.AddTo(this)` inside `OnEnable` — it isn't undone on disable, so every re-enable adds a duplicate.
+- ✅ A plain C# subscriber (Controller, service) holds a `DisposableBag` field, subscribes with
+  `.AddTo(ref _subscriptions)`, and disposes it in its own `Dispose()`. A bag is a struct: keep the field
+  non-`readonly` and never copy it. Use `CompositeDisposable` only for the enabled-only case above — its
+  `Clear()` keeps its backing list, while a bag re-allocates its array after every `Clear()`.
+- ✅ Unity's and third-party C# events (Input System actions, `SceneManager.sceneLoaded`) and `event Action`:
+  subscribe in `OnEnable` and always unsubscribe in `OnDisable` to prevent memory leaks.
+- ✅ Avoid lambdas when subscribing to a C# event — you can't unsubscribe one unless you store it in a variable
+  first. An R3 subscription is disposable, so a short lambda is fine there; a `Handle*` method is still preferred.
 - ⚠️ Be cautious when subscribing long-lived objects (e.g., singletons) to events from short-lived objects to avoid memory leaks.
 
 ```csharp
+// R3: attach the subscription to this object's lifetime
+private void Start()
+{
+    _gameManager.OnDoorOpened.Subscribe(HandleDoorOpened).AddTo(this);
+}
+```
+
+```csharp
+// Enabled-only R3 subscription
+private readonly CompositeDisposable _enabledSubscriptions = new();
+
 private void OnEnable()
 {
-    m_gameManager.DoorOpened += HandleDoorOpened;
+    _gameManager.OnPointsScored.Subscribe(HandlePointsScored).AddTo(_enabledSubscriptions);
 }
 
 private void OnDisable()
 {
-    m_gameManager.DoorOpened -= HandleDoorOpened;
+    _enabledSubscriptions.Clear();
+}
+```
+
+```csharp
+// Plain C# subscriber: a DisposableBag field (a struct - not readonly, never copied)
+private DisposableBag _subscriptions;
+
+public void Initialize()
+{
+    _health.OnHealthChanged.Subscribe(HandleHealthChanged).AddTo(ref _subscriptions);
+}
+
+public void Dispose() => _subscriptions.Dispose();
+```
+
+```csharp
+// Plain C# event: += in OnEnable, matching -= in OnDisable
+private void OnEnable()
+{
+    SceneManager.sceneLoaded += HandleSceneLoaded;
+}
+
+private void OnDisable()
+{
+    SceneManager.sceneLoaded -= HandleSceneLoaded;
 }
 ```
 
@@ -385,25 +519,31 @@ private void OnDisable()
 private void Awake()
 {
     // Cache component references here
-    m_rigidbody = GetComponent<Rigidbody>();
+    _rigidbody = GetComponent<Rigidbody>();
 }
 ```
 
 ### OnEnable()
-- ✅ Subscribe to events, register input callbacks, reset per-enable state.
+- ✅ Subscribe to plain C# events (Unity's, third-party, `event Action`), register input callbacks, reset
+  per-enable state.
+- ✅ An R3 subscription that must stop while the component is disabled subscribes here into a
+  `CompositeDisposable` that `OnDisable()` clears.
+- ❌ Never `.AddTo(this)` here — it isn't undone on disable, so every re-enable adds a duplicate.
 - ✅ Keep work small and reversible. Unsubscribe in `OnDisable()`.
 
 ```csharp
 private void OnEnable()
 {
     // Subscribe here; the matching -= belongs in OnDisable()
-    m_inputActions.Player.Jump.performed += HandleJumpPerformed;
-    m_health.Died += HandleDied;
+    _inputActions.Player.Jump.performed += HandleJumpPerformed;
+    SceneManager.sceneLoaded += HandleSceneLoaded;
 }
 ```
 
 ### Start()
 - ✅ Use Start to call initialization methods that require other components to exist and be ready.
+- ✅ Subscribe to another object's R3 observables here with `.AddTo(this)` — the publisher exists by now, and the
+  subscription ends when this object is destroyed.
 - ✅ Perform initialization that requires other components or scene objects to exist.
 - ✅ Use for one-time setup (animations, UI wiring) that must run after all `Awake()`/`OnEnable()`.
 
@@ -411,45 +551,46 @@ private void OnEnable()
 private void Start()
 {
     // Use cached references and perform operations that might depend on other components being initialized
-    m_animator.SetTrigger(k_initializeTrigger);
+    _animator.SetTrigger(InitializeTrigger);
 }
 ```
 
 ### OnDisable()
-- ✅ Use OnDisable for unsubscribing from events and cleaning up state when the object is disabled.
-- ✅ Mirror `OnEnable()` exactly. Every `+=` there needs its `-=` here.
+- ✅ Use OnDisable for unsubscribing from plain C# events, clearing enabled-only R3 subscriptions, and cleaning up
+  state when the object is disabled.
+- ✅ Mirror `OnEnable()` exactly. Every `+=` there needs its `-=` here, and every enabled-only R3 subscription
+  its `Clear()`.
 
 ```csharp
 private void OnDisable()
 {
     // Unsubscribe from events here to prevent memory leaks or unexpected behavior
-    m_inputActions.Player.Jump.performed -= HandleJumpPerformed;
-    m_health.Died -= HandleDied;
+    _inputActions.Player.Jump.performed -= HandleJumpPerformed;
+    SceneManager.sceneLoaded -= HandleSceneLoaded;
 }
 ```
 
 ### OnDestroy()
 - ✅ Use OnDestroy for teardown that must happen once, permanently — releasing native resources,
-  disposing handles, unregistering from a service locator.
+  disposing handles.
 - ⚠️ `OnDestroy` runs after `OnDisable`, so event unsubscription belongs in `OnDisable`, not here.
   Anything you do in both will run twice.
 - ⚠️ `OnDestroy` is not called if the GameObject was never enabled, and ordering between objects during
   scene teardown is not guaranteed. Don't rely on another object still being alive.
 - ✅ Release anything that isn't garbage-collected: `NativeArray`, `RenderTexture`, `Addressables`
   handles, `IDisposable` fields.
+- ✅ Dispose any R3 `Subject` this class owns.
 
 ```csharp
 private void OnDestroy()
 {
     // Release resources the GC won't clean up for you
-    m_inputActions?.Dispose();
+    _inputActions?.Dispose();
 
-    if (m_renderTexture != null)
+    if (_renderTexture != null)
     {
-        m_renderTexture.Release();
+        _renderTexture.Release();
     }
-
-    ServiceLocator.Unregister(this);
 }
 ```
 
@@ -481,7 +622,7 @@ private void Update()
 {
     // Put all your regular frame logic update code in Update()
 
-    if (!m_isActive) return; // Early return pattern
+    if (!_isActive) return; // Early return pattern
 
     // Move logic to well-named methods
     HandleMovement();
@@ -499,9 +640,9 @@ private void Update()
 // Use LateUpdate for camera follow so it reads the player's final position for this frame
 private void LateUpdate()
 {
-    Vector3 targetPosition = m_target.position + m_followOffset;
-    transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref m_followVelocity, m_smoothTime);
-    transform.LookAt(m_target);
+    Vector3 targetPosition = _target.position + _followOffset;
+    transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref _followVelocity, _smoothTime);
+    transform.LookAt(_target);
 }
 ```
 
@@ -517,13 +658,13 @@ private void LateUpdate()
 private void Update()
 {
     // Bad - expensive operation every frame
-    var nearbyEnemies = Physics.OverlapSphere(transform.position, m_detectionRadius);
+    var nearbyEnemies = Physics.OverlapSphere(transform.position, _detectionRadius);
 
     // Better - cache and update less frequently
-    if (Time.time > m_nextUpdateTime)
+    if (Time.time > _nextUpdateTime)
     {
         UpdateNearbyEnemies();
-        m_nextUpdateTime = Time.time + m_updateInterval;
+        _nextUpdateTime = Time.time + _updateInterval;
     }
 }
 ```
@@ -542,16 +683,16 @@ public void ApplyDamage(int amount)
 {
     if (amount <= 0) return;
 
-    m_health = Mathf.Max(0, m_health - amount);
+    _health = Mathf.Max(0, _health - amount);
     OnDamageTaken(amount);
 
-    if (m_health == 0)
+    if (_health == 0)
     {
         HandleDeath();
     }
 }
 
-public bool CanAfford(int cost) => m_currency >= cost;
+public bool CanAfford(int cost) => _currency >= cost;
 ```
 
 ## Private methods
@@ -567,7 +708,7 @@ public bool CanAfford(int cost) => m_currency >= cost;
 // Event callbacks grouped together
 private void HandleDied()
 {
-    m_animator.SetTrigger(k_deathTrigger);
+    _animator.SetTrigger(DeathTrigger);
 }
 
 private void HandleJumpPerformed(InputAction.CallbackContext context)
@@ -579,7 +720,7 @@ private void HandleJumpPerformed(InputAction.CallbackContext context)
 private void HandleDeath()
 {
     enabled = false;
-    m_collider.enabled = false;
+    _collider.enabled = false;
 }
 ```
 
@@ -595,13 +736,13 @@ private void HandleDeath()
 ```csharp
 public class Inventory : MonoBehaviour
 {
-    [SerializeField] private List<Slot> m_slots = new();
+    [SerializeField] private List<Slot> _slots = new();
 
     // Nested - meaningless outside Inventory
     [Serializable]
     public struct Slot
     {
-        public ItemDataSO Item;
+        public ItemConfig Item;
         public int Count;
     }
 }
@@ -633,19 +774,19 @@ internal enum SortOrder
 // Action: performs behavior / side effects
 public void Jump()
 {
-    m_rigidbody.AddForce(Vector3.up * m_jumpForce, ForceMode.Impulse);
+    _rigidbody.AddForce(Vector3.up * _jumpForce, ForceMode.Impulse);
 }
 
 // Setter: clearly assigns or updates a value (suitable for input callbacks)
 public void SetMovementInput(Vector2 input)
 {
-    m_forwardMovementInput = input;
+    _forwardMovementInput = input;
 }
 
 // Modifier: transforms or changes state
 public void ChangeHealth(int amount)
 {
-    m_health += amount;
+    _health += amount;
 }
 
 // "Handle" for event-driven callbacks (responding to external events/input)
@@ -657,9 +798,9 @@ private void HandleTargetSelected(Targetable target)
 // "Process" for game logic operations (part of game flow, usually turn-based or system-driven)
 private void ProcessTurnIncome()
 {
-    foreach (Settlement settlement in m_settlements)
+    foreach (Settlement settlement in _settlements)
     {
-        m_resources.AddGold(settlement.GoldPerTurn);
+        _resources.AddGold(settlement.GoldPerTurn);
     }
 }
 
@@ -705,15 +846,22 @@ public interface IDamageable<T>
 ```
 
 ## Naming files and folders
-- ✅ Use PascalCase for all file and folder names to maintain consistency with class and script naming conventions (e.g., `CharacterController.cs`, `AnimationController.cs`, `CoreSystems/`, `UI/`).
+- ✅ Use PascalCase for all file and folder names to maintain consistency with class and script naming conventions (e.g., `PlayerMover.cs`, `EnemyWaveController.cs`, `CoreSystems/`, `UI/`).
+- ✅ `*Controller` is reserved for the plain C# **Controller** of an MVC feature (see
+  [MVC layering](UnityReferenceGuides/UnityArchitectureInstructions.md#mvc-layering)). Name a `MonoBehaviour` by
+  its role instead — a View (`HealthBarView`) or what it does (`PlayerMover`, `PlayerInputReader`, `PhysicsBody`).
+  `[opinion]`
 - ✅ Organize scripts into folders based on functionality or feature areas (e.g., `CoreSystems/`, `UI/`).
 - ✅ Don't worry about long folder paths if they improve organization and clarity. That only helps future maintainers and your coding assistant.
 - ❌ Avoid spaces and special characters in file and folder names to prevent issues with version control systems and cross-platform compatibility.
+- ✅ Name assets by what they are, not by a type prefix. `[opinion]` Type and category come from the folder an asset lives in (`Textures/`, `Audio/`, …), so skip tags like `T_`, `M_` or `SFX_` on filenames.
+- ✅ Prefabs and other assets: PascalCase, named after the concept they represent — `Goblin.prefab`, `GoblinConfig.asset`.
+- ✅ Scenes: PascalCase, purpose first — `MainMenu.unity`, `Level01.unity`.
 - ℹ️ If you have a very long folder name with variations you can consider using `_` to separate words. Example: `InputSystemActions_PlayerInputComponent_UnityEvents`, `InputSystemActions_PlayerInputComponent_CSharpEvents`, etc.
 - ❌ Don't use `NotImplementedException` when stubbing out new methods or event handlers. It adds unnecessary noise and makes it harder to read the code. Instead, leave the method body empty or add a comment indicating that the implementation is pending.
 
 ```csharp
-private void LookInputReceived(InputAction.CallbackContext context)
+private void HandleLookPerformed(InputAction.CallbackContext context)
 {
     // Don't: when your assistant helps create new methods, leave out the NotImplementedException
     throw new NotImplementedException();
@@ -740,11 +888,11 @@ public enum Direction
     West
 }
 
-private Direction m_currentDirection;
+private Direction _currentDirection;
 
 private void Update()
 {
-    switch (m_currentDirection)
+    switch (_currentDirection)
     {
         case Direction.North:
             // Move north
@@ -808,22 +956,22 @@ ExecuteAction();
 ```csharp
 public class ScoreDisplay : MonoBehaviour
 {
-    [SerializeField] private TMP_Text m_scoreText;
-    private int m_lastScore = -1;
+    [SerializeField] private TMP_Text _scoreText;
+    private int _lastScore = -1;
 
     // Bad - readable, but allocates a new string every single frame
     private void Update()
     {
-        m_scoreText.text = $"Score: {m_score}";
+        _scoreText.text = $"Score: {_score}";
     }
 
     // Good - only allocates when the score actually changes
     private void Update()
     {
-        if (m_score == m_lastScore) return;
+        if (_score == _lastScore) return;
 
-        m_lastScore = m_score;
-        m_scoreText.text = $"Score: {m_score}";
+        _lastScore = _score;
+        _scoreText.text = $"Score: {_score}";
     }
 }
 ```
@@ -842,51 +990,70 @@ public class ScoreDisplay : MonoBehaviour
 public class EnemyRegistry : MonoBehaviour
 {
     // Target-typed new expression (C# 9.0+)
-    [SerializeField] private List<GameObject> m_enemies = new();
+    [SerializeField] private List<GameObject> _enemies = new();
 
     public void Register(GameObject enemy)
     {
-        if (!m_enemies.Contains(enemy))
+        if (!_enemies.Contains(enemy))
         {
-            m_enemies.Add(enemy);
+            _enemies.Add(enemy);
         }
     }
 
     public void Unregister(GameObject enemy)
     {
-        m_enemies.Remove(enemy);
+        _enemies.Remove(enemy);
     }
 }
 ```
 
-## Async & Awaitable usage
-- ✅ Use the `Awaitable` API (Unity 6 and later) with async/await for timed delays, sequencing, or
-  asynchronous workflows that don't require per-frame iteration. This is cleaner and more readable
-  than coroutines.
-- ✅ Name async methods with the `Async` suffix (e.g., `OpenDoorAsync`) and coroutines with the `Co`
-  suffix (e.g., `LoadAssetsCo`) to clearly distinguish them.
-- ✅ Use PascalCase and verb-based names for both async and coroutine methods.
-- ❌ Do not mix `Awaitable` and coroutines within the same operation — choose one approach per workflow.
-- ✅ Take a `CancellationToken` and guard continuations. After an `await`, the object may have been
-  destroyed: `if (this == null || !isActiveAndEnabled) return;`
-- ⚠️ Avoid `async void`. It can't be awaited and swallows exceptions. `async Awaitable` is awaitable and
-  is valid as a Unity message signature, so use it even for `Start`.
-- ⚠️ Cache `WaitForSeconds` in coroutines — allocating one per loop iteration is a classic leak.
+## Async & UniTask usage
+- ✅ UniTask is this project's default for async gameplay code — see
+  [`UnityCustomInstructions/UnityTechStack.md`](UnityCustomInstructions/UnityTechStack.md). Unity's
+  built-in `Awaitable` API is still valid Unity 6 API and works the same way if a project isn't on
+  UniTask; the naming and error-handling rules below apply to either.
+- ✅ Prefix async methods with the `Task` prefix (e.g., `TaskOpenDoor`), never with an `Async` suffix.
+  Name the rare legitimate coroutine with a `Routine` suffix instead (e.g., `LoadAssetsRoutine`), so
+  the two are never visually confused. `[opinion]`
+- ✅ Pull a `MonoBehaviour`'s cancellation token from `this.GetCancellationTokenOnDestroy()` rather
+  than managing a `CancellationTokenSource` by hand, so async work is auto-cancelled when the
+  component is destroyed.
+- ✅ Wrap every async method body in `try`/`catch (System.Exception e)`, applied consistently, not
+  just where there's fallback logic to run — re-throw `System.OperationCanceledException` explicitly
+  before the general catch. This is stricter than this guide's general
+  [try-catch stance](#using-try-catch--debugger-breaks), which still governs synchronous code.
+- ❌ Do not mix `Awaitable`/UniTask and coroutines within the same operation — choose one approach
+  per workflow.
+- ⚠️ Avoid `async void`. It can't be awaited and swallows exceptions. Use `UniTaskVoid` for
+  fire-and-forget work (with `.Forget()` at the call site) or `UniTask`/`UniTask<T>` for anything
+  awaited.
+- ⚠️ Cache `WaitForSeconds` in a coroutine — allocating one per loop iteration is a classic leak.
+- ℹ️ The full pattern set — composing tasks, timing control, closure-free `WaitUntil` overloads, and
+  more — is in
+  [UnityUniTaskInstructions.md](UnityReferenceGuides/UnityUniTaskInstructions.md).
 
 ```csharp
-public async Awaitable OpenDoorAsync(CancellationToken token)
+public async UniTask TaskOpenDoor()
 {
-    Debug.Log("Door opening...");
+    try
+    {
+        AppLogger.Log("Door opening...", this);
 
-    await Awaitable.WaitForSecondsAsync(2f, token);
+        await UniTask.Delay(2000, cancellationToken: this.GetCancellationTokenOnDestroy());
 
-    // The object may have been destroyed while we were waiting
-    if (this == null || !isActiveAndEnabled) return;
-
-    Debug.Log("Door opened!");
+        AppLogger.Log("Door opened!", this);
+    }
+    catch (System.OperationCanceledException)
+    {
+        throw;
+    }
+    catch (System.Exception e)
+    {
+        AppLogger.LogException(e, this);
+    }
 }
 
-private IEnumerator LoadAssetsCo()
+private IEnumerator LoadAssetsRoutine()
 {
     // Cache the wait - don't allocate one per iteration
     var wait = new WaitForSeconds(0.5f);
@@ -900,38 +1067,39 @@ private IEnumerator LoadAssetsCo()
     Debug.Log("All assets loaded!");
 }
 
-// async Awaitable, not async void - exceptions surface and it can be awaited
-private async Awaitable Start()
+private async UniTaskVoid Start()
 {
-    await OpenDoorAsync(destroyCancellationToken);
+    await TaskOpenDoor();
 }
 ```
 
 ## Scriptable Objects
 - ✅ Favor ScriptableObjects for static configuration data and reusable content that stays the same while the game runs (e.g., weapons, enemy stats, skill effects).
 - ❌ Don't use ScriptableObjects to store data that changes during gameplay (like player health, score, or runtime state). Edits made in the Editor persist between play sessions and will surprise you.
-- ✅ Use ScriptableObjects to reduce coupling between systems — feed configuration into MonoBehaviours instead of having them fetch data manually.
+- ✅ Use ScriptableObjects to reduce coupling between systems — feed configuration into MonoBehaviours (via `[SerializeField]`) or pure C# classes (via their constructor) instead of having them fetch data manually.
 - ✅ Always mark ScriptableObjects with `[CreateAssetMenu]` for easy asset creation via the Project window.
-- ✅ Append a `DataSO` suffix (e.g., `WeaponDataSO`) to make ScriptableObjects easily identifiable. *(Opinionated — plenty of teams use no suffix at all.)*
+- ✅ Give the menu a `"<Category>/<Asset Name>"` path and set `fileName` to the class name exactly.
+- ✅ End every ScriptableObject class name with `Config` (e.g., `WeaponConfig`). *(Opinionated — plenty of teams use no suffix at all.)*
 - ✅ Store ScriptableObject assets in a dedicated folder structure (e.g., `Assets/Data/Weapons/`).
 - ✅ Keep ScriptableObjects focused on a single responsibility to enhance reusability and maintainability.
 - ✅ Keep data and logic separate: ScriptableObjects should primarily hold data. Only add logic that directly relates to the data.
 - ✅ Use properties to expose data from ScriptableObjects instead of public fields for better encapsulation.
+- ℹ️ See [UnityScriptableObjectInstructions.md](UnityReferenceGuides/UnityScriptableObjectInstructions.md) for naming, menu paths, config versus runtime data, folder organisation and binary serialization.
 
 ```csharp
-// WeaponDataSO stores weapon configuration
-[CreateAssetMenu(fileName = "WeaponData", menuName = "Game Data/Weapon", order = 0)]
-public class WeaponDataSO : ScriptableObject
+// WeaponConfig stores weapon configuration
+[CreateAssetMenu(fileName = "WeaponConfig", menuName = "Weapons/Weapon Config")]
+public class WeaponConfig : ScriptableObject
 {
-    [SerializeField] private string m_weaponName;
-    [SerializeField] private int m_damage;
-    [SerializeField] private float m_range;
-    [SerializeField] private GameObject m_projectilePrefab;
+    [SerializeField] private string _weaponName;
+    [SerializeField] private int _damage;
+    [SerializeField] private float _range;
+    [SerializeField] private GameObject _projectilePrefab;
 
-    public string WeaponName => m_weaponName;
-    public int Damage => m_damage;
-    public float Range => m_range;
-    public GameObject ProjectilePrefab => m_projectilePrefab;
+    public string WeaponName => _weaponName;
+    public int Damage => _damage;
+    public float Range => _range;
+    public GameObject ProjectilePrefab => _projectilePrefab;
 }
 ```
 
@@ -941,8 +1109,8 @@ public class WeaponDataSO : ScriptableObject
 - ✅ Use descriptive names that clearly indicate the purpose or state.
 - ✅ Always define these names as constants in code to prevent runtime errors, enable refactoring, and avoid typos.
 - ✅ Centralize these constants in a dedicated static class for maintainability and discoverability.
-- ℹ️ **Naming note:** `public const` members of a static lookup class are API surface, so they use
-  PascalCase with no prefix. The `k_` prefix is for private constants inside a behaviour.
+- ℹ️ **Naming note:** every constant is PascalCase with no prefix — `public const` on a static lookup class and
+  `private const` inside a behaviour alike.
 - ✅ **For animators, go one step further and hash the parameter names.** `Animator.StringToHash` converts
   the string once at startup; every `SetBool`/`SetFloat`/`SetTrigger` after that skips the string lookup
   entirely. Store the hashes in `static readonly int` fields.
@@ -973,32 +1141,32 @@ public static class Layers
 // Animator parameters - hash once, use the int forever after
 public class PlayerAnimator : MonoBehaviour
 {
-    private static readonly int s_isRunningHash = Animator.StringToHash("IsRunning");
-    private static readonly int s_speedHash = Animator.StringToHash("Speed");
-    private static readonly int s_jumpTriggerHash = Animator.StringToHash("JumpTrigger");
+    private static readonly int IsRunningHash = Animator.StringToHash("IsRunning");
+    private static readonly int SpeedHash = Animator.StringToHash("Speed");
+    private static readonly int JumpTriggerHash = Animator.StringToHash("JumpTrigger");
 
-    private Animator m_animator;
+    private Animator _animator;
 
     private void Awake()
     {
-        m_animator = GetComponent<Animator>();
+        _animator = GetComponent<Animator>();
     }
 
     private void UpdateMovement(bool isMoving, float currentSpeed)
     {
         // Safe and fast - no string comparison at runtime
-        m_animator.SetBool(s_isRunningHash, isMoving);
-        m_animator.SetFloat(s_speedHash, currentSpeed);
+        _animator.SetBool(IsRunningHash, isMoving);
+        _animator.SetFloat(SpeedHash, currentSpeed);
     }
 }
 
 // Bad - magic strings scattered throughout code (runtime errors possible)
 private void UpdateMovementBadly(bool isMoving, float currentSpeed)
 {
-    m_animator.SetBool("IsWalking", isMoving);        // Typo risk
-    m_animator.SetFloat("Spead", currentSpeed);       // Typo - fails silently!
+    _animator.SetBool("IsWalking", isMoving);         // Typo risk
+    _animator.SetFloat("Spead", currentSpeed);        // Typo - fails silently!
 
-    if (m_animator.GetBool("IsWalknig"))              // Another typo
+    if (_animator.GetBool("IsWalknig"))               // Another typo
     {
         // This condition will never be true due to the typo
     }
@@ -1007,7 +1175,18 @@ private void UpdateMovementBadly(bool isMoving, float currentSpeed)
 
 ## Debugging
 - ✅ Log strategically. Avoid excessive logging, especially in production builds.
-- ✅ Use conditional compilation (`#if UNITY_EDITOR`) or a custom logging wrapper to strip logs in release builds.
+- ✅ Route logging through a thin wrapper (`AppLogger`). Its `Log` and `LogWarning` are marked
+  `[System.Diagnostics.Conditional("ENABLE_LOGS")]`. `Debug.Log` on its own is not stripped, and the
+  string built for the message is still built when logging is off — `[Conditional]` removes the call
+  site, arguments included.
+- ✅ `ENABLE_LOGS` is the one define that toggles `Log` and `LogWarning`. Add it to Scripting Define
+  Symbols for builds that should log (Editor, development, QA); leave it out of release builds. Define it
+  in Player Settings rather than per assembly — `[Conditional]` is decided where the call is compiled, so
+  every assembly that logs must see the same define.
+- ✅ `LogError` and `LogException` are deliberately not `[Conditional]`, so errors survive in release builds.
+- ✅ Tag messages with a class- or module-level `DebugPrefix` constant, interpolated as
+  `$"{DebugPrefix} message"`, so logs are searchable. `GetType().Name` works when the concrete type varies.
+- ✅ Match the call to the severity: `Debug.Log`, `Debug.LogWarning`, `Debug.LogError`.
 - ✅ Always include context in log messages and pass the object as the second parameter so clicking the
   log selects it in the Hierarchy.
 - ✅ Use `Debug.DrawLine`, `Debug.DrawRay`, and `Gizmos` for visual debugging in the Editor.
@@ -1024,27 +1203,51 @@ Debug.Log("Player has entered the trigger zone.", gameObject);
 // Consistent, searchable error format
 Debug.LogError($"[{GetType().Name}] Failed to load data: {exception.Message}", this);
 
+// A fixed class-level tag - a constant, so the name isn't rebuilt on every call
+private const string DebugPrefix = "[EnemySpawner]";
+Debug.LogWarning($"{DebugPrefix} No spawn points assigned.", this);
+
+// Toggle Log/LogWarning with the ENABLE_LOGS define: [Conditional] removes the whole call site, including
+// the string built for the message, when ENABLE_LOGS isn't defined. LogError and LogException are not
+// conditional, so errors still reach release builds
+public static class AppLogger
+{
+    [System.Diagnostics.Conditional("ENABLE_LOGS")]
+    public static void Log(string message, UnityEngine.Object context = null) => UnityEngine.Debug.Log(message, context);
+
+    [System.Diagnostics.Conditional("ENABLE_LOGS")]
+    public static void LogWarning(string message, UnityEngine.Object context = null) => UnityEngine.Debug.LogWarning(message, context);
+
+    public static void LogError(string message, UnityEngine.Object context = null) => UnityEngine.Debug.LogError(message, context);
+
+    public static void LogException(System.Exception exception, UnityEngine.Object context = null) => UnityEngine.Debug.LogException(exception, context);
+}
+
+AppLogger.LogWarning($"{DebugPrefix} No spawn points assigned.", this);
+
 // Gizmos for editor visualization
 private void OnDrawGizmosSelected()
 {
     Gizmos.color = Color.green;
-    Gizmos.DrawWireSphere(transform.position, m_detectionRadius);
+    Gizmos.DrawWireSphere(transform.position, _detectionRadius);
 }
 
 // Use [RequireComponent] instead of null-checking a hard dependency
 [RequireComponent(typeof(AudioSource))]
 public class AudioPlayer : MonoBehaviour
 {
-    private AudioSource m_audioSource;
+    private AudioSource _audioSource;
 
     private void Awake()
     {
-        m_audioSource = GetComponent<AudioSource>();
+        _audioSource = GetComponent<AudioSource>();
     }
 }
 ```
 
 ## Using try-catch & debugger breaks
+- ℹ️ **Exception:** every async method's body gets a try/catch, applied consistently — see
+  [Async & UniTask usage](#async--unitask-usage). This section's rule governs synchronous code.
 - ✅ Use try-catch for external dependencies — file I/O, network requests, platform services — where failures are outside your control. These are genuinely exceptional cases.
 - ❌ Avoid try-catch for internal logic or expected conditions (e.g., null checks, invalid input). Validate inputs and use control flow instead.
 - ✅ Always log the exception details to help with debugging.
@@ -1056,7 +1259,7 @@ public void SaveGame(GameData data)
     try
     {
         string json = JsonUtility.ToJson(data);
-        File.WriteAllText(k_saveFilePath, json);
+        File.WriteAllText(SaveFilePath, json);
     }
     catch (IOException ioEx)
     {
@@ -1088,6 +1291,9 @@ This guide covers style and naming. The general best-practice guides go into dep
 | Topic | Guide |
 |---|---|
 | SOLID, patterns, object pooling, state machines | [UnityDesignPatternsInstructions.md](UnityReferenceGuides/UnityDesignPatternsInstructions.md) |
+| Architecture: MVC, VContainer DI, Singleton policy, MessagePipe, R3 | [UnityArchitectureInstructions.md](UnityReferenceGuides/UnityArchitectureInstructions.md) |
+| ScriptableObjects: naming, menu paths, config vs runtime data | [UnityScriptableObjectInstructions.md](UnityReferenceGuides/UnityScriptableObjectInstructions.md) |
+| UniTask: cancellation, error handling, closure-free overloads | [UnityUniTaskInstructions.md](UnityReferenceGuides/UnityUniTaskInstructions.md) |
 | Hot paths, allocations, profiling, rendering cost | [UnityPerformanceOptimizationInstructions.md](UnityReferenceGuides/UnityPerformanceOptimizationInstructions.md) |
 | UXML, USS, BEM, flexbox, runtime binding | [UnityUIToolkitInstructions.md](UnityReferenceGuides/UnityUIToolkitInstructions.md) |
 | Canvas structure, layout rebuilds, uGUI pitfalls | [UnityUGUIInstructions.md](UnityReferenceGuides/UnityUGUIInstructions.md) |
@@ -1096,6 +1302,7 @@ This guide covers style and naming. The general best-practice guides go into dep
 | Edit Mode vs Play Mode tests, test assemblies | [UnityTestingInstructions.md](UnityReferenceGuides/UnityTestingInstructions.md) |
 | Custom inspectors, property drawers, Gizmos | [UnityEditorToolingInstructions.md](UnityReferenceGuides/UnityEditorToolingInstructions.md) |
 | Input System actions, phases, rebinding | [UnityInputSystemInstructions.md](UnityReferenceGuides/UnityInputSystemInstructions.md) |
+| Rigidbodies, colliders, collision callbacks, queries | [UnityPhysicsInstructions.md](UnityReferenceGuides/UnityPhysicsInstructions.md) |
 | Animator parameters, blend trees, events | [UnityAnimationInstructions.md](UnityReferenceGuides/UnityAnimationInstructions.md) |
 | Mixers, AudioSource pooling, spatial audio | [UnityAudioInstructions.md](UnityReferenceGuides/UnityAudioInstructions.md) |
 | Assembly definitions and dependency boundaries | [UnityAssemblyDefinitionsInstructions.md](UnityReferenceGuides/UnityAssemblyDefinitionsInstructions.md) |

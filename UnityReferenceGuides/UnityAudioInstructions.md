@@ -33,7 +33,7 @@ Table of contents:
 - ✅ One audio service that owns playback. Components ask it to play a sound; they don't create
   `AudioSource`s themselves.
 - ✅ Define sounds as ScriptableObjects (clip + volume + pitch range + mixer group), per
-  [ScriptableObjects](../UnityStyleGuide.md#scriptable-objects). Designers tune them without touching
+  [ScriptableObjects](UnityScriptableObjectInstructions.md). Designers tune them without touching
   code.
 - ⚠️ Randomise pitch slightly (±0.05) on repeated SFX. Identical playback of the same clip is the
   single most fatiguing thing in game audio.
@@ -78,20 +78,20 @@ everything below about 0.8 sounds identical and the bottom half does nothing.
 ```csharp
 public class VolumeSettings : MonoBehaviour
 {
-    private const float k_minDecibels = -80f;
-    private const float k_silenceThreshold = 0.0001f;
+    private const float MinDecibels = -80f;
+    private const float SilenceThreshold = 0.0001f;
 
-    [SerializeField] private AudioMixer m_mixer;
+    [SerializeField] private AudioMixer _mixer;
 
     /// <summary>Sets a mixer volume from a linear 0–1 slider value.</summary>
     public void SetVolume(string exposedParameter, float linearValue)
     {
         // Log10(0) is -Infinity, which the mixer rejects - clamp to silence instead
-        float decibels = linearValue <= k_silenceThreshold
-            ? k_minDecibels
+        float decibels = linearValue <= SilenceThreshold
+            ? MinDecibels
             : Mathf.Log10(linearValue) * 20f;
 
-        if (!m_mixer.SetFloat(exposedParameter, decibels))
+        if (!_mixer.SetFloat(exposedParameter, decibels))
         {
             Debug.LogError($"[{GetType().Name}] '{exposedParameter}' is not exposed on the mixer.", this);
         }
@@ -100,7 +100,7 @@ public class VolumeSettings : MonoBehaviour
     /// <summary>Reads a mixer volume back as a linear 0–1 value, for restoring a slider.</summary>
     public float GetVolume(string exposedParameter)
     {
-        if (!m_mixer.GetFloat(exposedParameter, out float decibels))
+        if (!_mixer.GetFloat(exposedParameter, out float decibels))
         {
             return 1f;
         }
@@ -129,7 +129,7 @@ public class VolumeSettings : MonoBehaviour
 ```csharp
 public void SetPaused(bool isPaused)
 {
-    AudioMixerSnapshot target = isPaused ? m_pausedSnapshot : m_defaultSnapshot;
+    AudioMixerSnapshot target = isPaused ? _pausedSnapshot : _defaultSnapshot;
     target.TransitionTo(0.25f);
 }
 ```
@@ -164,7 +164,7 @@ instantiating a bullet per shot — pool them.
 
 - ✅ Use `UnityEngine.Pool.ObjectPool<T>`, consistent with
   [Object Pooling](UnityDesignPatternsInstructions.md#object-pooling).
-- ✅ Return the source to the pool when the clip finishes. A coroutine or `Awaitable` timed to
+- ✅ Return the source to the pool when the clip finishes. A UniTask delay timed to
   `clip.length / pitch` is simpler and cheaper than polling `isPlaying` every frame.
 - ⚠️ Reset `pitch`, `volume`, `loop` and `spatialBlend` on release. A pooled source that kept
   `loop = true` never returns.
@@ -174,41 +174,52 @@ instantiating a bullet per shot — pool them.
 ```csharp
 public class AudioService : MonoBehaviour
 {
-    [SerializeField] private AudioSource m_sourcePrefab;
-    [SerializeField] private int m_maxVoices = 32;
+    [SerializeField] private AudioSource _sourcePrefab;
+    [SerializeField] private int _maxVoices = 32;
 
-    private ObjectPool<AudioSource> m_pool;
+    private ObjectPool<AudioSource> _pool;
 
     private void Awake()
     {
-        m_pool = new ObjectPool<AudioSource>(
-            createFunc: () => Instantiate(m_sourcePrefab, transform),
+        _pool = new ObjectPool<AudioSource>(
+            createFunc: () => Instantiate(_sourcePrefab, transform),
             actionOnGet: source => source.gameObject.SetActive(true),
             actionOnRelease: ResetSource,
             actionOnDestroy: source => Destroy(source.gameObject),
             collectionCheck: false,
             defaultCapacity: 8,
-            maxSize: m_maxVoices);
+            maxSize: _maxVoices);
     }
 
-    public async Awaitable PlayAtAsync(SoundDataSO sound, Vector3 position, CancellationToken token)
+    // Pass this.GetCancellationTokenOnDestroy(): destroying the service cancels the wait
+    public async UniTask TaskPlayAt(SoundConfig sound, Vector3 position, CancellationToken token)
     {
-        AudioSource source = m_pool.Get();
+        try
+        {
+            AudioSource source = _pool.Get();
 
-        source.transform.position = position;
-        source.clip = sound.Clip;
-        source.outputAudioMixerGroup = sound.MixerGroup;
-        source.volume = sound.Volume;
-        source.pitch = sound.RandomPitch();      // Slight variation stops ear fatigue
-        source.spatialBlend = sound.SpatialBlend;
-        source.Play();
+            source.transform.position = position;
+            source.clip = sound.Clip;
+            source.outputAudioMixerGroup = sound.MixerGroup;
+            source.volume = sound.Volume;
+            source.pitch = sound.RandomPitch();      // Slight variation stops ear fatigue
+            source.spatialBlend = sound.SpatialBlend;
+            source.Play();
 
-        // Wait the real duration - pitch changes how long the clip takes
-        await Awaitable.WaitForSecondsAsync(sound.Clip.length / source.pitch, token);
+            // Wait the real duration - pitch changes how long the clip takes
+            await UniTask.Delay(System.TimeSpan.FromSeconds(sound.Clip.length / source.pitch),
+                cancellationToken: token);
 
-        if (this == null) return;
-
-        m_pool.Release(source);
+            _pool.Release(source);
+        }
+        catch (System.OperationCanceledException)
+        {
+            throw;
+        }
+        catch (System.Exception e)
+        {
+            AppLogger.LogException(e, this);
+        }
     }
 
     private static void ResetSource(AudioSource source)

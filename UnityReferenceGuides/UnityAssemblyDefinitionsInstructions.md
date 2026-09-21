@@ -162,6 +162,7 @@ assembly-level points:
   create a script in that folder.
 - ✅ Match it to the assembly name. Consistency here is what makes the codebase navigable.
 - ⚠️ It only affects newly created scripts. Existing files aren't touched.
+- ✅ Namespace naming rules (single-part root, one sub-namespace per feature folder, `.Editor` suffix) are in the [Style Guide](../UnityStyleGuide.md#namespaces).
 
 ---
 
@@ -189,7 +190,7 @@ assembly-level points:
 #if ADDRESSABLES_1_21_OR_NEWER
     return await Addressables.LoadAssetAsync<GameObject>(key).Task;
 #else
-    return m_directReference;
+    return _directReference;
 #endif
 ```
 

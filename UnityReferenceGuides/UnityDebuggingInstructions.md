@@ -10,6 +10,11 @@ applyTo: "**/*.cs"
 > project-specific settings live in [`UnityCustomInstructions/`](../UnityCustomInstructions/).
 
 
+> **Logging in this guide.** Diagnostic snippets call `Debug.Log` directly because they are temporary: add them,
+> read the Console, remove them. Anything that stays in the codebase goes through `AppLogger`, whose `Log` and
+> `LogWarning` are stripped unless `ENABLE_LOGS` is defined — see [Debugging](../UnityStyleGuide.md#debugging) in the
+> style guide and [Conditional Logging](#diagnostic-code-patterns) below.
+
 ## Overview
 
 This document provides instructions for AI coding assistants connected to Unity projects via MCP (Model Context Protocol).
@@ -25,7 +30,8 @@ Use these guidelines when helping developers debug Unity applications.
 - [Input System Debugging](#input-system-debugging)
 - [Physics Debugging](#physics-debugging)
 - [Animation and Animator Debugging](#animation-and-animator-debugging)
-- [UI Toolkit Debugging](#ui-toolkit-debugging-unity-6)
+- [uGUI Debugging](#ugui-debugging)
+- [UI Toolkit Debugging](#ui-toolkit-debugging-unity-6) (secondary)
 - [Audio Debugging](#audio-debugging)
 - [Async and Coroutine Debugging](#async-and-coroutine-debugging)
 - [Event System Debugging](#event-system-debugging)
@@ -36,12 +42,14 @@ Use these guidelines when helping developers debug Unity applications.
 - [Build and Platform-Specific Debugging](#build-and-platform-specific-debugging)
 - [Collaborative Debugging with AI Tools](#collaborative-debugging-with-ai-tools)
 - [LLM-Focused Triage Prompts](#llm-focused-triage-prompts)
+- [Learn more](#learn-more)
 
 ## LLM-Focused Triage Prompts
 - Paste the exact **error/warning text + stack trace** (include file path and line number).
 - State **Unity version** (e.g., 6.3.x), **platform/build type** (Editor/Dev/Release), and **Enter Play Mode Options** (domain/scene reload on/off).
 - Give **repro steps** and name the **scene/prefab** and **scripts** involved.
-- For **Input/UI**, list the active **action map/control scheme** and **UXML/USS asset names** you are querying.
+- For **Input/UI**, list the active **action map/control scheme** and the **Canvas/prefab names** (uGUI) or
+  **UXML/USS asset names** (UI Toolkit) involved.
 - Mention any **recent code or asset changes** just before the bug appeared.
 - If possible, share a **minimal log snippet** around the failure (no screenshots).
 
@@ -74,15 +82,15 @@ When investigating Unity issues, check these areas in order:
 
 ```
 NullReferenceException: Object reference not set to an instance of an object
-  at PlayerController.Update () [0x00012] in Assets/Scripts/PlayerController.cs:47
+  at PlayerMover.Update () [0x00012] in Assets/Scripts/PlayerMover.cs:47
   at UnityEngine.Internal.$MethodUtility.InvokeMethod (...)
 ```
 
 **Key information:**
-- Script name: `PlayerController`
+- Script name: `PlayerMover`
 - Method: `Update()`
 - Line number: `47`
-- File path: `Assets/Scripts/PlayerController.cs`
+- File path: `Assets/Scripts/PlayerMover.cs`
 
 ### Common Warning Patterns
 
@@ -107,14 +115,14 @@ Four ways to declare the same reference, and what each does in the Inspector:
 
 | Declaration | Serialized | In Inspector | Verdict |
 |---|---|---|---|
-| `[SerializeField] private GameObject m_target;` | ✅ | ✅ visible | ✅ Correct |
-| `private GameObject m_target;` | ❌ | ❌ absent | The field is null at runtime and you can't assign it |
+| `[SerializeField] private GameObject _target;` | ✅ | ✅ visible | ✅ Correct |
+| `private GameObject _target;` | ❌ | ❌ absent | The field is null at runtime and you can't assign it |
 | `public GameObject Target;` | ✅ | ✅ visible | Works, but breaks encapsulation — avoid |
 | `[HideInInspector] public GameObject Target;` | ✅ | ❌ hidden | Deliberate: persisted but not designer-editable |
 
 ```csharp
 // ✅ The one you want
-[SerializeField] private GameObject m_target;
+[SerializeField] private GameObject _target;
 ```
 
 ⚠️ A field that "won't show up in the Inspector" is almost always the second row — the
@@ -126,12 +134,12 @@ Four ways to declare the same reference, and what each does in the Inspector:
 // Debug serialized values at runtime
 private void OnValidate()
 {
-    Debug.Log($"[Editor] m_target assigned: {m_target != null}");
+    Debug.Log($"[Editor] _target assigned: {_target != null}");
 }
 
 private void Awake()
 {
-    Debug.Log($"[Runtime] m_target assigned: {m_target != null}");
+    Debug.Log($"[Runtime] _target assigned: {_target != null}");
 }
 ```
 
@@ -153,9 +161,9 @@ When a SerializeField appears assigned in the Prefab but null at runtime:
     ↓
 Awake()           ← Object initialization, references to self
     ↓
-OnEnable()        ← Subscribe to events
+OnEnable()        ← Subscribe to plain C# events (Unity, third-party, event Action)
     ↓
-Start()           ← References to other objects, initialization that depends on others
+Start()           ← References to other objects; R3 subscriptions (.AddTo(this))
     ↓
 FixedUpdate()     ← Physics updates (fixed timestep)
     ↓
@@ -163,9 +171,9 @@ Update()          ← Game logic (every frame)
     ↓
 LateUpdate()      ← Camera follow, post-processing
     ↓
-OnDisable()       ← Unsubscribe from events
+OnDisable()       ← Unsubscribe plain C# events
     ↓
-OnDestroy()       ← Cleanup
+OnDestroy()       ← Cleanup; dispose owned Subjects (R3 .AddTo(this) subscriptions end here)
 ```
 
 ### Diagnosing Order Problems
@@ -200,7 +208,8 @@ public class UIManager : MonoBehaviour { }
 | Symptom | Likely Cause | Solution |
 |---------|--------------|----------|
 | Reference null in `Awake()` | Other object not yet initialized | Move to `Start()` |
-| Reference null in `Start()` | Object created later in scene | Use `FindAnyObjectByType` with null check or events |
+| Reference null in `Start()` | Object created later in scene | Inject it through VContainer, or have the late object register itself with a service. Avoid `FindAnyObjectByType` at runtime |
+| Injected service null, or VContainer can't resolve it in a scene | The scene's scope isn't parented to the boot scope | See [Parent link for the next scope](UnityScenesAndLifecycleInstructions.md#parent-link-for-the-next-scope) |
 | Camera jitter | Camera in `Update()`, target in `Update()` | Move camera to `LateUpdate()` |
 | Physics inconsistency | Physics logic in `Update()` | Move to `FixedUpdate()` |
 
@@ -216,16 +225,16 @@ public class UIManager : MonoBehaviour { }
 // Pattern: Validate all SerializeFields in Awake/Start
 private void Awake()
 {
-    Debug.Assert(m_playerTransform != null, "PlayerTransform not assigned!", this);
-    Debug.Assert(m_healthBar != null, "HealthBar not assigned!", this);
-    Debug.Assert(m_audioSource != null, "AudioSource not assigned!", this);
+    Debug.Assert(_playerTransform != null, "PlayerTransform not assigned!", this);
+    Debug.Assert(_healthBar != null, "HealthBar not assigned!", this);
+    Debug.Assert(_audioSource != null, "AudioSource not assigned!", this);
 }
 
 // Pattern: Null-conditional for optional references
-m_optionalComponent?.DoSomething();
+_optionalComponent?.DoSomething();
 
 // Pattern: Explicit null check with error
-if (m_requiredComponent == null)
+if (_requiredComponent == null)
 {
     Debug.LogError($"Required component missing on {gameObject.name}", this);
     enabled = false;
@@ -247,29 +256,29 @@ Rigidbody rb = someOtherObject.GetComponent<Rigidbody>();
 // Issue: Component added at runtime not yet available
 // Fix: Use RequireComponent or check timing
 [RequireComponent(typeof(Rigidbody))]
-public class PhysicsController : MonoBehaviour { }
+public class PhysicsBody : MonoBehaviour { }
 ```
 
 ### Destroyed Object Access
 
 ```csharp
 // Issue: Accessing destroyed object
-private GameObject m_enemy;
+private GameObject _enemy;
 
 private void Update()
 {
     // This throws MissingReferenceException after enemy is destroyed
-    float dist = Vector3.Distance(transform.position, m_enemy.transform.position);
+    float dist = Vector3.Distance(transform.position, _enemy.transform.position);
 }
 
 // Fix: Unity's fake null check
-if (m_enemy != null)  // Works for destroyed objects
+if (_enemy != null)   // Works for destroyed objects
 {
-    float dist = Vector3.Distance(transform.position, m_enemy.transform.position);
+    float dist = Vector3.Distance(transform.position, _enemy.transform.position);
 }
 
 // Note: C# null check doesn't catch destroyed objects
-if (m_enemy is not null)  // WRONG - doesn't detect destroyed Unity objects
+if (_enemy is not null)   // WRONG - doesn't detect destroyed Unity objects
 ```
 
 ---
@@ -282,15 +291,15 @@ if (m_enemy is not null)  // WRONG - doesn't detect destroyed Unity objects
 // Debug: Monitor device changes
 private void OnEnable()
 {
-    InputSystem.onDeviceChange += OnDeviceChange;
+    InputSystem.onDeviceChange += HandleDeviceChange;
 }
 
 private void OnDisable()
 {
-    InputSystem.onDeviceChange -= OnDeviceChange;
+    InputSystem.onDeviceChange -= HandleDeviceChange;
 }
 
-private void OnDeviceChange(InputDevice device, InputDeviceChange change)
+private void HandleDeviceChange(InputDevice device, InputDeviceChange change)
 {
     Debug.Log($"Device '{device.displayName}' {change}");
 }
@@ -312,14 +321,25 @@ private void LogConnectedDevices()
 // Check 1: Is PlayerInput component enabled?
 // Check 2: Is the correct Action Map active?
 
-// Debug: Log all action triggers
-private void OnEnable()
+// Debug: Log all action triggers (a C# event on PlayerInput - += / -= pairing applies)
+private PlayerInput _playerInput;
+
+private void Awake()
 {
-    var playerInput = GetComponent<PlayerInput>();
-    playerInput.onActionTriggered += OnActionTriggered;
+    _playerInput = GetComponent<PlayerInput>();
 }
 
-private void OnActionTriggered(InputAction.CallbackContext context)
+private void OnEnable()
+{
+    _playerInput.onActionTriggered += HandleActionTriggered;
+}
+
+private void OnDisable()
+{
+    _playerInput.onActionTriggered -= HandleActionTriggered;
+}
+
+private void HandleActionTriggered(InputAction.CallbackContext context)
 {
     Debug.Log($"Action: {context.action.name}, Phase: {context.phase}");
 }
@@ -355,7 +375,7 @@ private void DebugAction(InputAction action)
 // Debug: Read action value directly
 private void Update()
 {
-    var moveAction = m_inputActions.Player.Move;
+    var moveAction = _inputActions.Player.Move;
     Vector2 value = moveAction.ReadValue<Vector2>();
     Debug.Log($"Move: {value}, Phase: {moveAction.phase}");
 }
@@ -445,14 +465,14 @@ private void OnTriggerEnter2D(Collider2D other) { }
 // Debug: Log current animator state
 private void Update()
 {
-    var stateInfo = m_animator.GetCurrentAnimatorStateInfo(0);
+    var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
     Debug.Log($"State: {stateInfo.shortNameHash}, NormalizedTime: {stateInfo.normalizedTime}");
 }
 
 // Debug: Check if specific state is playing
 private bool IsPlaying(string stateName)
 {
-    var stateInfo = m_animator.GetCurrentAnimatorStateInfo(0);
+    var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
     return stateInfo.IsName(stateName);
 }
 
@@ -460,9 +480,9 @@ private bool IsPlaying(string stateName)
 // Check: Are transition conditions met?
 private void DebugTransitionConditions()
 {
-    Debug.Log($"IsGrounded: {m_animator.GetBool("IsGrounded")}");
-    Debug.Log($"Speed: {m_animator.GetFloat("Speed")}");
-    Debug.Log($"IsInTransition: {m_animator.IsInTransition(0)}");
+    Debug.Log($"IsGrounded: {_animator.GetBool("IsGrounded")}");
+    Debug.Log($"Speed: {_animator.GetFloat("Speed")}");
+    Debug.Log($"IsInTransition: {_animator.IsInTransition(0)}");
 }
 ```
 
@@ -476,13 +496,13 @@ private void DebugTransitionConditions()
 // Debug: List all parameters
 private void LogAnimatorParameters()
 {
-    foreach (var param in m_animator.parameters)
+    foreach (var param in _animator.parameters)
     {
         string value = param.type switch
         {
-            AnimatorControllerParameterType.Bool => m_animator.GetBool(param.name).ToString(),
-            AnimatorControllerParameterType.Float => m_animator.GetFloat(param.name).ToString(),
-            AnimatorControllerParameterType.Int => m_animator.GetInteger(param.name).ToString(),
+            AnimatorControllerParameterType.Bool => _animator.GetBool(param.name).ToString(),
+            AnimatorControllerParameterType.Float => _animator.GetFloat(param.name).ToString(),
+            AnimatorControllerParameterType.Int => _animator.GetInteger(param.name).ToString(),
             AnimatorControllerParameterType.Trigger => "(trigger)",
             _ => "unknown"
         };
@@ -491,12 +511,12 @@ private void LogAnimatorParameters()
 }
 
 // Best practice: Cache parameter hashes
-private static readonly int s_speedHash = Animator.StringToHash("Speed");
-private static readonly int s_jumpHash = Animator.StringToHash("Jump");
+private static readonly int SpeedHash = Animator.StringToHash("Speed");
+private static readonly int JumpHash = Animator.StringToHash("Jump");
 
 private void SetSpeed(float speed)
 {
-    m_animator.SetFloat(s_speedHash, speed);
+    _animator.SetFloat(SpeedHash, speed);
 }
 ```
 
@@ -507,15 +527,17 @@ private void SetSpeed(float speed)
 // Check 1: Is the method public?
 // Check 2: Does the method signature match?
 
+// Check 3: Does the name match the event on the clip exactly? (Receivers are named Handle*)
+
 // Valid animation event methods:
-public void OnFootstep() { }                    // No parameters
-public void OnFootstep(string sound) { }        // String parameter
-public void OnFootstep(float volume) { }        // Float parameter
-public void OnFootstep(int index) { }           // Int parameter
-public void OnFootstep(AnimationEvent evt) { }  // Full event data
+public void HandleFootstep() { }                    // No parameters
+public void HandleFootstep(string sound) { }        // String parameter
+public void HandleFootstep(float volume) { }        // Float parameter
+public void HandleFootstep(int index) { }           // Int parameter
+public void HandleFootstep(AnimationEvent evt) { }  // Full event data
 
 // Debug: Add logging to event method
-public void OnFootstep(AnimationEvent evt)
+public void HandleFootstep(AnimationEvent evt)
 {
     Debug.Log($"Footstep event at time {evt.time}, clip: {evt.animatorClipInfo.clip.name}");
 }
@@ -535,8 +557,8 @@ public void OnFootstep(AnimationEvent evt)
 private void OnAnimatorMove()
 {
     // Custom root motion handling
-    Vector3 position = m_animator.rootPosition;
-    Quaternion rotation = m_animator.rootRotation;
+    Vector3 position = _animator.rootPosition;
+    Quaternion rotation = _animator.rootRotation;
 
     // Apply with modifications
     transform.position = position;
@@ -546,7 +568,38 @@ private void OnAnimatorMove()
 
 ---
 
+## uGUI Debugging
+
+This project's UI is uGUI (see [UnityUGUIInstructions.md](UnityUGUIInstructions.md), whose
+[Troubleshooting](UnityUGUIInstructions.md#troubleshooting) section has the full symptom list).
+
+### Clicks Not Arriving
+
+Work down in order:
+1. Is there an `EventSystem` in the scene, with the Input System UI Input Module (not the legacy Standalone one)?
+2. Does the Canvas have a `GraphicRaycaster`? World Space canvases also need an **Event Camera**.
+3. Is **Raycast Target** on for the element, and `interactable` on for the Selectable?
+4. Is a parent `CanvasGroup` hidden with `interactable = false` or `blocksRaycasts = false`?
+5. Is something invisible on top of it? A full-screen element with Raycast Target left on is the usual culprit.
+
+- ✅ Select the `EventSystem` during Play mode: its Inspector preview shows the pointer's current event data,
+  including which object the pointer is over.
+- ✅ For a scripted check, log `EventSystem.RaycastAll` results front to back — the diagnostic is in the uGUI guide's
+  Troubleshooting section.
+
+### Rebuilds and Batching
+
+- ✅ Profiler **UI** and **UI Details** modules show which Canvas rebuilt, how often, and its batch count.
+- ✅ `Canvas.SendWillRenderCanvases` every frame with nothing visibly changing means something dirties the Canvas
+  each frame — an `Animator` on UI, or `.text` / `SetText` called unconditionally.
+- ✅ The **Frame Debugger** shows why a batch broke: a different material or texture, a `Mask`, or a sprite-less
+  `Image` drawing with `UnityWhite`.
+
+---
+
 ## UI Toolkit Debugging (Unity 6+)
+
+Secondary on this project — only relevant if a project uses UI Toolkit.
 
 ### Common UI Toolkit Issues
 
@@ -577,14 +630,13 @@ Access via Window → UI Toolkit → Debugger:
 ### Data Binding Issues (Unity 6)
 
 ```csharp
-// Verify binding path
-[CreateAssetMenu]
-public class PlayerData : ScriptableObject
+// Verify binding path - it follows the data source's member name
+public class PlayerStatsModel
 {
-    public int health;  // Binding path: "health"
+    [CreateProperty] public int Health { get; set; }   // Binding path: "Health"
 }
 
-// In UXML: data-source-path="health"
+// In UXML: data-source-path="Health"
 // Common issue: Path is case-sensitive
 
 // Debug: Verify data source is set
@@ -602,12 +654,12 @@ private void OnEnable()
     var root = GetComponent<UIDocument>().rootVisualElement;
     var pane = root.Q("stats-pane");
 
-    // Swap from mock asset to runtime data
-    pane.dataSource = m_playerStats.runtimeData;
+    // Swap from the design-time mock to the runtime Model (not the Config asset)
+    pane.dataSource = _playerStatsModel;
 }
 ```
 
-For comprehensive UI Toolkit patterns, see `UIToolkitBestPractices.md` in the project root.
+For comprehensive UI Toolkit patterns, see [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md).
 
 ---
 
@@ -642,11 +694,11 @@ private void DebugAudioSource(AudioSource source)
 ```csharp
 // Issue: 3D sound not working
 // Check: Spatial Blend setting (0 = 2D, 1 = 3D)
-m_audioSource.spatialBlend = 1f;  // Fully 3D
+_audioSource.spatialBlend = 1f;   // Fully 3D
 
 // Check: Distance settings
-Debug.Log($"Min Distance: {m_audioSource.minDistance}");
-Debug.Log($"Max Distance: {m_audioSource.maxDistance}");
+Debug.Log($"Min Distance: {_audioSource.minDistance}");
+Debug.Log($"Max Distance: {_audioSource.maxDistance}");
 
 // Debug: Distance to listener
 var listener = FindAnyObjectByType<AudioListener>();
@@ -665,7 +717,7 @@ if (listener != null)
 
 // Debug: Get current mixer values
 float value;
-if (m_mixer.GetFloat("MasterVolume", out value))
+if (_mixer.GetFloat("MasterVolume", out value))
 {
     Debug.Log($"MasterVolume: {value} dB");
 }
@@ -696,21 +748,29 @@ float LinearToDecibel(float linear)
 
 ## Async and Coroutine Debugging
 
+UniTask is this project's async default — patterns and rules are in
+[UnityUniTaskInstructions.md](UnityUniTaskInstructions.md); this section is for debugging them.
+
 ### Coroutine Issues
+
+Coroutines are the rare exception here (see
+[When a coroutine is still the right call](UnityUniTaskInstructions.md#when-a-coroutine-is-still-the-right-call)).
 
 ```csharp
 // Issue: Coroutine stops unexpectedly
-// Cause: GameObject disabled or destroyed
+// Cause: GameObject disabled or destroyed - a coroutine stops with it
+
+private static readonly WaitForSeconds TickInterval = new(1f);   // cached, not allocated per loop
 
 // Debug: Track coroutine lifecycle
-private IEnumerator MyCoroutine()
+private IEnumerator TickRoutine()
 {
     Debug.Log("Coroutine started");
     try
     {
         while (true)
         {
-            yield return new WaitForSeconds(1f);
+            yield return TickInterval;
             Debug.Log("Coroutine tick");
         }
     }
@@ -722,126 +782,155 @@ private IEnumerator MyCoroutine()
 
 // Issue: Multiple coroutines running
 // Fix: Store and stop reference
-private Coroutine m_currentCoroutine;
+private Coroutine _tickRoutine;
 
-public void StartMyCoroutine()
+public void StartTicking()
 {
-    if (m_currentCoroutine != null)
-        StopCoroutine(m_currentCoroutine);
-    m_currentCoroutine = StartCoroutine(MyCoroutine());
+    if (_tickRoutine != null)
+        StopCoroutine(_tickRoutine);
+    _tickRoutine = StartCoroutine(TickRoutine());
 }
 ```
 
-### Async/Await Issues (Legacy Pattern)
+### Work Continuing After Destroy
 
 ```csharp
-// Issue: Async method continues after object destroyed
+// Issue: async void + no cancellation - resumes after Destroy(), and its exceptions have nowhere to go
 private async void Start()
 {
-    await SomeAsyncOperation();
-    // This line may execute after Destroy()!
-    transform.position = Vector3.zero;  // Potential error
+    await Task.Delay(1000);
+    transform.position = Vector3.zero;  // May run on a destroyed object
 }
 
-// Fix: Check for destruction
-private async void Start()
+// Fix: UniTaskVoid + a destroy token. After Destroy() the await throws OperationCanceledException
+// instead of resuming, so no "this == null" checks are needed
+private void Start()
 {
-    await SomeAsyncOperation();
-
-    if (this == null) return;  // Unity's destroyed check
-
-    transform.position = Vector3.zero;
-}
-```
-
-### Awaitable API (Unity 6)
-
-```csharp
-// Unity 6 preferred pattern: Use Awaitable with destroyCancellationToken
-private async Awaitable DoSomethingAsync()
-{
-    // Automatically cancelled when MonoBehaviour is destroyed
-    await Awaitable.WaitForSecondsAsync(1f, destroyCancellationToken);
-
-    // Safe to access - this line won't run if destroyed
-    transform.position = Vector3.zero;
+    TaskResetPosition(this.GetCancellationTokenOnDestroy()).Forget();
 }
 
-// Wait for next frame
-private async Awaitable WaitOneFrame()
+private async UniTaskVoid TaskResetPosition(CancellationToken token)
 {
-    await Awaitable.NextFrameAsync(destroyCancellationToken);
-}
-
-// Wait for end of frame
-private async Awaitable WaitEndOfFrame()
-{
-    await Awaitable.EndOfFrameAsync(destroyCancellationToken);
-}
-
-// Wait for fixed update
-private async Awaitable WaitForPhysics()
-{
-    await Awaitable.FixedUpdateAsync(destroyCancellationToken);
-}
-
-// Custom cancellation
-private CancellationTokenSource m_cts;
-
-private async Awaitable DoWithCustomCancellation()
-{
-    m_cts = new CancellationTokenSource();
-
     try
     {
-        await Awaitable.WaitForSecondsAsync(5f, m_cts.Token);
-        Debug.Log("Completed");
+        await UniTask.Delay(1000, cancellationToken: token);
+        transform.position = Vector3.zero;  // Never reached after Destroy()
     }
-    catch (OperationCanceledException)
+    catch (System.OperationCanceledException)
     {
-        Debug.Log("Cancelled");
+        throw;
+    }
+    catch (System.Exception e)
+    {
+        AppLogger.LogException(e);
     }
 }
-
-public void Cancel() => m_cts?.Cancel();
 ```
 
-### Awaitable vs Coroutine Comparison
+### UniTask Timing Equivalents
 
-| Feature | Coroutine | Awaitable (Unity 6) |
-|---------|-----------|---------------------|
-| Cancellation | Manual StopCoroutine | Built-in token support |
-| Return values | Not supported | Supported via `Awaitable<T>` |
-| Exception handling | Limited | Full try/catch support |
-| Destruction safety | Must check manually | `destroyCancellationToken` |
-| Syntax | `yield return` | `async/await` |
+```csharp
+await UniTask.Delay(TimeSpan.FromSeconds(1), cancellationToken: token);
+await UniTask.NextFrame(token);
+await UniTask.WaitForEndOfFrame(token);   // Unity 2023.1+: no MonoBehaviour argument needed
+await UniTask.WaitForFixedUpdate(token);
+```
+
+- ℹ️ `Awaitable` (`Awaitable.WaitForSecondsAsync`, `NextFrameAsync`, …) is Unity-native and valid, but this project
+  uses UniTask. Don't mix the two in one flow.
+
+### Finding Leaked or Stuck Tasks
+
+- ✅ Open **Window → UniTask Tracker**. Toggle **Enable Tracking** (low cost) and **Enable StackTrace** (high cost)
+  to list every UniTask still running and where it started — a task that should have finished shows up here.
+- ⚠️ Debugging only: turn both toggles off when done.
+
+### Exceptions That Vanish
+
+- ⚠️ A `UniTaskVoid` call without `.Forget()` — the compiler warns, and its exceptions go unobserved.
+- ⚠️ An exception nobody catches ends up at `UniTaskScheduler.UnobservedTaskException`, which logs it by default
+  (`UnobservedExceptionWriteLogType` sets the level). That can be frames after, and far from, the cause.
+- ⚠️ `OperationCanceledException` is **silently ignored** there. A cancelled task that was expected to finish
+  looks like "nothing happened" — check whether its token was cancelled (object destroyed, scene unloaded).
+- ✅ The project rule prevents most of this: every async method has a try/catch that rethrows
+  `OperationCanceledException` and logs the rest.
+
+### Coroutine vs UniTask
+
+| Feature | Coroutine | UniTask (project default) |
+|---------|-----------|---------------------------|
+| Cancellation | `StopCoroutine`; stops when the GameObject is disabled or destroyed | `CancellationToken` (`GetCancellationTokenOnDestroy()`) |
+| Return values | Not supported | `UniTask<T>` |
+| Exception handling | Limited | try/catch; unhandled → `UnobservedTaskException` |
+| Leak inspection | — | UniTask Tracker window |
+| Syntax | `yield return` | `async`/`await` |
 
 ---
 
 ## Event System Debugging
+
+Project events are R3 `Subject`s exposed as `Observable<T>` (see [Events](../UnityStyleGuide.md#events)). Plain C#
+events cover Unity's and third-party events and the `event Action` fallback; `UnityEvent` is only for
+Inspector-wired callbacks.
+
+### R3 Subscription Issues
+
+```csharp
+// Issue: Handler fires once more every time the component is re-enabled
+private void OnEnable()
+{
+    _health.OnHealthChanged.Subscribe(HandleHealthChanged).AddTo(this);  // BAD: not undone on disable
+}
+
+// Fix: Subscribe once in Start (or clear an enabled-only CompositeDisposable in OnDisable)
+private void Start()
+{
+    _health.OnHealthChanged.Subscribe(HandleHealthChanged).AddTo(this);
+}
+
+// Issue: Handler keeps running after the subscriber is gone
+_health.OnHealthChanged.Subscribe(HandleHealthChanged);  // BAD: no AddTo - lives as long as the Subject
+
+// Debug: Log each value on its way to one subscriber
+_health.OnHealthChanged
+    .Do(onNext: value => Debug.Log($"OnHealthChanged -> {value}", this))
+    .Subscribe(HandleHealthChanged)
+    .AddTo(this);
+```
+
+- ✅ **Window → Observable Tracker** lists every active subscription. Turn on tracking (and stack traces, to see
+  where each was made) from the window, or in code with `ObservableTracker.EnableTracking = true` and
+  `ObservableTracker.EnableStackTrace = true`. A subscription that should have ended is still listed. Debugging
+  only — both default to off.
+- ⚠️ `ObjectDisposedException` from a Subject: the owner disposed it in `OnDestroy`, and something raised it or
+  subscribed afterwards. Only the owner should call `OnNext`, and only while it is alive.
+- ℹ️ An exception thrown inside a handler goes to R3's unhandled-exception handler, which logs it with
+  `Debug.LogException` by default. `ObservableSystem.RegisterUnhandledExceptionHandler` replaces it.
 
 ### UnityEvent Issues
 
 ```csharp
 // Issue: UnityEvent not firing
 // Debug: Check listener count
-Debug.Log($"Listener count: {m_onPlayerDeath.GetPersistentEventCount()}");
+Debug.Log($"Listener count: {_onPlayerDeath.GetPersistentEventCount()}");
 
 // Check: Are listeners assigned in Inspector?
 // Check: Is the target object not destroyed?
 // Check: Is the method signature correct?
 
 // Debug: Log when event fires
-[SerializeField] private UnityEvent m_onPlayerDeath;
+[SerializeField] private UnityEvent _onPlayerDeath;
 
 public void Die()
 {
-    Debug.Log($"Invoking OnPlayerDeath with {m_onPlayerDeath.GetPersistentEventCount()} listeners");
-    m_onPlayerDeath?.Invoke();
+    Debug.Log($"Invoking OnPlayerDeath with {_onPlayerDeath.GetPersistentEventCount()} listeners");
+    _onPlayerDeath?.Invoke();
 }
 ```
 
-### C# Event Subscription Leaks
+### Plain C# Event Subscription Leaks
+
+Unity's and third-party C# events, and the `event Action` fallback.
 
 ```csharp
 // Issue: Event keeps firing after object should be done
@@ -850,37 +939,37 @@ public void Die()
 // BAD: Memory leak and potential errors
 private void Start()
 {
-    GameManager.OnGameOver += HandleGameOver;  // Subscribes
+    GameManager.GameOver += HandleGameOver;  // Subscribes
     // Never unsubscribes!
 }
 
 // GOOD: Always unsubscribe
 private void OnEnable()
 {
-    GameManager.OnGameOver += HandleGameOver;
+    GameManager.GameOver += HandleGameOver;
 }
 
 private void OnDisable()
 {
-    GameManager.OnGameOver -= HandleGameOver;
+    GameManager.GameOver -= HandleGameOver;
 }
 
 // Debug: Track subscriptions
 public static class GameManager
 {
-    private static event Action m_onGameOver;
+    private static event Action _onGameOver;
 
-    public static event Action OnGameOver
+    public static event Action GameOver
     {
         add
         {
             Debug.Log($"Subscriber added: {value.Target?.GetType().Name}.{value.Method.Name}");
-            m_onGameOver += value;
+            _onGameOver += value;
         }
         remove
         {
             Debug.Log($"Subscriber removed: {value.Target?.GetType().Name}.{value.Method.Name}");
-            m_onGameOver -= value;
+            _onGameOver -= value;
         }
     }
 }
@@ -890,22 +979,23 @@ public static class GameManager
 
 ```csharp
 // Issue: Events firing in wrong order
-// Debug: Log invocation order
+// Debug: Log invocation order (plain C# event; an R3 Subject calls subscribers in the order they
+// subscribed - log per subscription with .Do(...) as above)
 
-public event Action<int> OnScoreChanged;
+public event Action<int> ScoreChanged;
 
 private void AddScore(int points)
 {
-    m_score += points;
+    _score += points;
 
     // Log each subscriber as it's called
-    if (OnScoreChanged != null)
+    if (ScoreChanged != null)
     {
         int index = 0;
-        foreach (var handler in OnScoreChanged.GetInvocationList())
+        foreach (var handler in ScoreChanged.GetInvocationList())
         {
             Debug.Log($"Calling handler {index++}: {handler.Target?.GetType().Name}.{handler.Method.Name}");
-            ((Action<int>)handler).Invoke(m_score);
+            ((Action<int>)handler).Invoke(_score);
         }
     }
 }
@@ -915,8 +1005,11 @@ private void AddScore(int points)
 
 | Symptom | Check | Solution |
 |---------|-------|----------|
-| Event never fires | Is Invoke() called? | Add null check and Invoke |
-| Event fires multiple times | Subscribed multiple times? | Unsubscribe in OnDisable |
+| R3: fires once more per re-enable | `.AddTo(this)` inside `OnEnable`? | Subscribe in `Start`, or clear a `CompositeDisposable` in `OnDisable` |
+| R3: handler runs after its object is gone | Subscription without `.AddTo(...)`? | Attach every subscription to a lifetime |
+| R3: `ObjectDisposedException` | Subject raised or subscribed after its owner's `OnDestroy`? | Only the owner raises it, while alive |
+| C# event never fires | Is Invoke() called? | Add null check and Invoke |
+| C# event fires multiple times | Subscribed multiple times? | Unsubscribe in OnDisable |
 | NullReference on Invoke | No subscribers? | Use `?.Invoke()` pattern |
 | Wrong object receives event | Static event with instance handler? | Unsubscribe on disable/destroy |
 
@@ -924,95 +1017,65 @@ private void AddScore(int points)
 
 ## ScriptableObject Runtime Issues
 
+When and how to use ScriptableObjects is covered in [UnityScriptableObjectInstructions.md](UnityScriptableObjectInstructions.md); this section is for debugging them.
+
 ### Instance vs Asset Confusion
 
+A Config asset is read-only authored data; per-entity runtime state belongs in a plain C# **Model** (see
+[MVC layering](UnityArchitectureInstructions.md#mvc-layering)). Most ScriptableObject bugs are runtime state
+written into a Config.
+
 ```csharp
-// Issue: Runtime changes persist in Editor
-[SerializeField] private PlayerDataSO m_playerData;
+// Issue: Runtime changes persist in the Editor after Play mode
+// Root cause: runtime state written into a Config asset (which exposed a setter)
+[SerializeField] private PlayerConfig _playerConfig;
 
 private void TakeDamage(int damage)
 {
-    m_playerData.health -= damage;  // Modifies the ASSET in Editor!
+    _playerConfig.Health -= damage;   // Writes to the ASSET - the change is saved in the Editor
 }
 
-// Fix: Create runtime instance
-private PlayerDataSO m_runtimeData;
+// Fix: the Config stays get-only; runtime state lives in a Model created from it
+public class PlayerModel
+{
+    public int Health { get; private set; }
+
+    public PlayerModel(PlayerConfig config) => Health = config.MaxHealth;
+
+    public void ApplyDamage(int amount) => Health = Mathf.Max(0, Health - amount);
+}
+
+private PlayerModel _player;
 
 private void Awake()
 {
-    // Create a copy for runtime modifications
-    m_runtimeData = Instantiate(m_playerData);
+    _player = new PlayerModel(_playerConfig);
 }
 
 private void TakeDamage(int damage)
 {
-    m_runtimeData.health -= damage;  // Safe - modifies instance only
-}
-
-private void OnDestroy()
-{
-    // Clean up runtime instance
-    if (m_runtimeData != null)
-        Destroy(m_runtimeData);
+    _player.ApplyDamage(damage);   // The asset is never touched
 }
 ```
 
-### ScriptableObject as Runtime Data Container
-
-```csharp
-// Pattern: Create SO at runtime for data binding
-public class RuntimeDataProvider : MonoBehaviour
-{
-    [SerializeField] private PlayerDataSO m_template;
-
-    private PlayerDataSO m_runtimeData;
-
-    public PlayerDataSO RuntimeData
-    {
-        get
-        {
-            if (m_runtimeData == null)
-            {
-                m_runtimeData = ScriptableObject.CreateInstance<PlayerDataSO>();
-                m_runtimeData.hideFlags = HideFlags.HideAndDontSave;
-
-                // Copy initial values from template
-                m_runtimeData.health = m_template.health;
-                m_runtimeData.maxHealth = m_template.maxHealth;
-            }
-            return m_runtimeData;
-        }
-    }
-}
-```
+- ℹ️ While debugging, `Instantiate(_playerConfig)` gives a throwaway copy that stops the asset being edited. Use it
+  only to confirm the diagnosis — it isn't the fix, and the copy must be `Destroy`ed.
 
 ### Shared Reference Issues
 
-```csharp
-// Issue: Multiple objects sharing same SO modify each other's data
-// This is INTENTIONAL for shared state, but a bug if unexpected
+Every object that references a Config sees the same values — that is the point of a Config. If one object's
+change shows up in another, something is writing to the shared asset, which is the bug above.
 
-// Debug: Log which object is modifying
-public void ModifyHealth(int delta, string source)
-{
-    Debug.Log($"Health modified by {delta} from {source}. New value: {health + delta}");
-    health += delta;
-}
-
-// Fix if unintentional: Each object needs its own instance
-private void Awake()
-{
-    m_playerData = Instantiate(m_playerData);
-}
-```
+- ✅ To find every writer: make the Config's properties get-only (no setter). The compile errors list each place
+  that writes to it; move that state into a Model.
 
 ### Common ScriptableObject Issues
 
 | Symptom | Check | Solution |
 |---------|-------|----------|
-| Changes persist after play mode | Modifying asset directly? | Use Instantiate() for runtime copy |
-| Multiple objects share state | Same SO assigned to all? | Intentional: shared state. Unintentional: instantiate |
-| SO reference null at runtime | Asset not in build? | Check Resources folder or Addressables |
+| Changes persist after play mode | Writing to a Config asset? | Move the state into a Model; keep the Config get-only |
+| Objects change each other's values | Shared Config being written to? | Same fix — a Config is shared read-only data |
+| SO reference null at runtime | Asset not in build? | Check the serialized reference or its Addressables entry |
 | OnEnable called in Editor | Normal behavior | Use `Application.isPlaying` check |
 
 ---
@@ -1106,11 +1169,11 @@ Vector3 GetWorldScaleIndependent()
 ```csharp
 using Unity.Profiling;
 
-private static readonly ProfilerMarker s_updateMarker = new ProfilerMarker("MyScript.Update");
+private static readonly ProfilerMarker UpdateMarker = new ProfilerMarker("MyScript.Update");
 
 private void Update()
 {
-    using (s_updateMarker.Auto())
+    using (UpdateMarker.Auto())
     {
         // Code to profile
     }
@@ -1137,13 +1200,13 @@ private void Update()
 }
 
 // GOOD: Keep a registry, reuse the builder
-private readonly List<Enemy> m_activeEnemies = new(100);  // Enemies add/remove themselves
-private readonly StringBuilder m_statusBuilder = new(64);
+private readonly List<Enemy> _activeEnemies = new(100);   // Enemies add/remove themselves
+private readonly StringBuilder _statusBuilder = new(64);
 
 private void Update()
 {
-    m_statusBuilder.Clear();
-    m_statusBuilder.Append("Count: ").Append(m_activeEnemies.Count);  // No allocation
+    _statusBuilder.Clear();
+    _statusBuilder.Append("Count: ").Append(_activeEnemies.Count);    // No allocation
 }
 ```
 
@@ -1210,6 +1273,9 @@ private void FindMissingReferences()
 #endif
 ```
 
+- ℹ️ For logging, don't wrap calls in `#if` — use `AppLogger`, toggled by `ENABLE_LOGS` (see
+  [Conditional Logging](#diagnostic-code-patterns)).
+
 ### Build-Only Issues
 
 Common causes for "works in Editor, fails in build":
@@ -1248,7 +1314,7 @@ AI coding assistants (like Claude Code) cannot directly control IDE debuggers bu
 
 **Step 1: Describe the Issue**
 ```
-Error: NullReferenceException in PlayerController.Update() line 47
+Error: NullReferenceException in PlayerMover.Update() line 47
 Repro: Start game, press jump button
 Expected: Player jumps
 Actual: Exception thrown, player frozen
@@ -1262,9 +1328,9 @@ The AI reads relevant files, traces execution flow, and identifies suspects.
 private void Update()
 {
     // Diagnostic logging added by AI
-    Debug.Log($"[DEBUG] m_inputHandler: {m_inputHandler != null}", this);
-    Debug.Log($"[DEBUG] m_characterController: {m_characterController != null}", this);
-    Debug.Log($"[DEBUG] m_isGrounded: {m_isGrounded}", this);
+    Debug.Log($"[DEBUG] _inputHandler: {_inputHandler != null}", this);
+    Debug.Log($"[DEBUG] _characterController: {_characterController != null}", this);
+    Debug.Log($"[DEBUG] _isGrounded: {_isGrounded}", this);
 
     HandleMovement();
     HandleJump();  // Line 47 - exception occurs here
@@ -1285,16 +1351,16 @@ When you need the debugger to pause at a specific condition:
 private void Update()
 {
     // Pause debugger when unexpected state occurs
-    if (m_health < 0)
+    if (_health < 0)
     {
         Debug.LogError("Health went negative - breaking to debugger");
         System.Diagnostics.Debugger.Break();  // Rider/VS will pause here
     }
 
     // Conditional break with context logging
-    if (m_player == null && m_wasPlayerValid)
+    if (_player == null && _wasPlayerValid)
     {
-        Debug.LogError($"Player reference lost! Last valid frame: {m_lastValidFrame}");
+        Debug.LogError($"Player reference lost! Last valid frame: {_lastValidFrame}");
         System.Diagnostics.Debugger.Break();
     }
 }
@@ -1321,24 +1387,29 @@ private void LogStateSnapshot()
 {
     Debug.Log("=== STATE SNAPSHOT ===");
     Debug.Log($"Position: {transform.position}");
-    Debug.Log($"Velocity: {m_rigidbody?.linearVelocity}");
-    Debug.Log($"IsGrounded: {m_isGrounded}");
-    Debug.Log($"CurrentState: {m_currentState}");
-    Debug.Log($"InputVector: {m_inputVector}");
+    Debug.Log($"Velocity: {_rigidbody?.linearVelocity}");
+    Debug.Log($"IsGrounded: {_isGrounded}");
+    Debug.Log($"CurrentState: {_currentState}");
+    Debug.Log($"InputVector: {_inputVector}");
     Debug.Log("======================");
 }
 ```
 
-**Conditional Logging (Editor Only)**
-```csharp
-[System.Diagnostics.Conditional("UNITY_EDITOR")]
-private void DebugLog(string message)
-{
-    Debug.Log($"[{GetType().Name}] {message}", this);
-}
+**Conditional Logging (`ENABLE_LOGS`)**
 
-// Usage - automatically stripped from builds
-DebugLog($"Processing {m_items.Count} items");
+Diagnostic logging you keep goes through `AppLogger`. Its `Log` and `LogWarning` are
+`[Conditional("ENABLE_LOGS")]`, so the call and the string built for it are removed from any build without the
+define — including development and QA builds, which is why it's `ENABLE_LOGS` and not `UNITY_EDITOR`.
+
+```csharp
+private const string DebugPrefix = "[Inventory]";
+
+// Stripped (call and string) when ENABLE_LOGS isn't defined
+AppLogger.Log($"{DebugPrefix} Processing {_items.Count} items", this);
+
+// A class-local helper needs the same attribute, or the string is still built at the call site
+[System.Diagnostics.Conditional("ENABLE_LOGS")]
+private void DebugLog(string message) => AppLogger.Log($"{DebugPrefix} {message}", this);
 ```
 
 ### Tips for Effective AI-Assisted Debugging
@@ -1356,3 +1427,5 @@ DebugLog($"Processing {m_items.Count} items");
 - [Debugging C# code in Unity](https://docs.unity3d.com/6000.3/Documentation/Manual/managed-code-debugging.html)
 - [Console window](https://docs.unity3d.com/6000.3/Documentation/Manual/Console.html)
 - [Frame Debugger](https://docs.unity3d.com/6000.3/Documentation/Manual/FrameDebugger.html)
+- [UniTask Tracker](https://github.com/Cysharp/UniTask#unitasktracker)
+- [R3 ObservableTracker](https://github.com/Cysharp/R3#observabletracker)

@@ -48,7 +48,7 @@ Two mechanisms, for two different situations:
 // ✅ Editor-only helper on a runtime component
 public class SpawnPoint : MonoBehaviour
 {
-    [SerializeField] private float m_radius = 1f;
+    [SerializeField] private float _radius = 1f;
 
 #if UNITY_EDITOR
     // Only compiled in the Editor - safe, because nothing at runtime calls it
@@ -89,24 +89,24 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine.UIElements;
 
-[CustomEditor(typeof(WeaponDataSO))]
+[CustomEditor(typeof(WeaponConfig))]
 [CanEditMultipleObjects]
-public class WeaponDataSOEditor : Editor
+public class WeaponConfigEditor : Editor
 {
     public override VisualElement CreateInspectorGUI()
     {
         var root = new VisualElement();
 
         // Binding by property path gives Undo and multi-object editing for free
-        root.Add(new PropertyField(serializedObject.FindProperty("m_weaponName")));
-        root.Add(new PropertyField(serializedObject.FindProperty("m_damage")));
+        root.Add(new PropertyField(serializedObject.FindProperty("_weaponName")));
+        root.Add(new PropertyField(serializedObject.FindProperty("_damage")));
 
         var dps = new Label();
         root.Add(dps);
 
         root.TrackSerializedObjectValue(serializedObject, so =>
         {
-            var weapon = (WeaponDataSO)so.targetObject;
+            var weapon = (WeaponConfig)so.targetObject;
             dps.text = $"DPS: {weapon.Damage * weapon.RateOfFire:F1}";
         });
 
@@ -115,7 +115,7 @@ public class WeaponDataSOEditor : Editor
 }
 ```
 
-- ✅ Name the file after the class: `WeaponDataSOEditor.cs`, in an `Editor/` folder.
+- ✅ Name the file after the class: `WeaponConfigEditor.cs`, in an `Editor/` folder.
 - ✅ Prefer `PropertyField` bound to a property path over drawing controls by hand. You get Undo,
   prefab override indicators, and multi-object editing without writing any of it.
 
@@ -263,10 +263,10 @@ private void OnDrawGizmosSelected()
     Gizmos.matrix = transform.localToWorldMatrix;
 
     Gizmos.color = new Color(0f, 1f, 0f, 0.35f);
-    Gizmos.DrawWireSphere(Vector3.zero, m_detectionRadius);
+    Gizmos.DrawWireSphere(Vector3.zero, _detectionRadius);
 
     Gizmos.color = Color.yellow;
-    Gizmos.DrawLine(Vector3.zero, Vector3.forward * m_facingRange);
+    Gizmos.DrawLine(Vector3.zero, Vector3.forward * _facingRange);
 }
 ```
 
@@ -289,10 +289,10 @@ Editor tooling earns its keep fastest when it catches broken data before it reac
 private void OnValidate()
 {
     // Clamp nonsense values as they're typed
-    m_maxHealth = Mathf.Max(1, m_maxHealth);
-    m_detectionRadius = Mathf.Max(0f, m_detectionRadius);
+    _maxHealth = Mathf.Max(1, _maxHealth);
+    _detectionRadius = Mathf.Max(0f, _detectionRadius);
 
-    if (m_projectilePrefab != null && !m_projectilePrefab.TryGetComponent(out Projectile _))
+    if (_projectilePrefab != null && !_projectilePrefab.TryGetComponent(out Projectile _))
     {
         Debug.LogWarning($"[{name}] Projectile prefab has no Projectile component.", this);
     }
@@ -304,13 +304,13 @@ private void OnValidate()
 [MenuItem("MyGame/Validate All ScriptableObjects")]
 private static void ValidateAllScriptableObjects()
 {
-    string[] guids = AssetDatabase.FindAssets("t:WeaponDataSO");
+    string[] guids = AssetDatabase.FindAssets("t:WeaponConfig");
     int problems = 0;
 
     foreach (string guid in guids)
     {
         string path = AssetDatabase.GUIDToAssetPath(guid);
-        var weapon = AssetDatabase.LoadAssetAtPath<WeaponDataSO>(path);
+        var weapon = AssetDatabase.LoadAssetAtPath<WeaponConfig>(path);
 
         if (weapon.Damage <= 0)
         {
@@ -358,10 +358,10 @@ using UnityEngine.Serialization;
 
 public class Health : MonoBehaviour
 {
-    // Renamed from m_hp. Without this attribute every prefab and scene
+    // Renamed from _hp. Without this attribute every prefab and scene
     // silently reverts to the default value on next deserialization.
-    [FormerlySerializedAs("m_hp")]
-    [SerializeField] private int m_maxHealth = 100;
+    [FormerlySerializedAs("_hp")]
+    [SerializeField] private int _maxHealth = 100;
 }
 ```
 
@@ -378,7 +378,7 @@ overrides, and Undo all stay correct.
 [MenuItem("MyGame/Migrate Weapon Damage To Int")]
 private static void MigrateWeaponDamage()
 {
-    string[] guids = AssetDatabase.FindAssets("t:WeaponDataSO");
+    string[] guids = AssetDatabase.FindAssets("t:WeaponConfig");
 
     AssetDatabase.StartAssetEditing();   // Batch the import work
     try
@@ -386,11 +386,11 @@ private static void MigrateWeaponDamage()
         foreach (string guid in guids)
         {
             string path = AssetDatabase.GUIDToAssetPath(guid);
-            var asset = AssetDatabase.LoadAssetAtPath<WeaponDataSO>(path);
+            var asset = AssetDatabase.LoadAssetAtPath<WeaponConfig>(path);
 
             var so = new SerializedObject(asset);
-            SerializedProperty legacy = so.FindProperty("m_damageFloat");
-            SerializedProperty target = so.FindProperty("m_damage");
+            SerializedProperty legacy = so.FindProperty("_damageFloat");
+            SerializedProperty target = so.FindProperty("_damage");
 
             if (legacy != null && target != null)
             {

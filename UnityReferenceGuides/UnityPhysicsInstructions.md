@@ -21,6 +21,7 @@ Table of contents:
 - [Layer collision matrix](#layer-collision-matrix)
 - [Queries](#queries)
 - [Simulation control](#simulation-control)
+- [Sleeping](#sleeping)
 - [Unity 6 API changes](#unity-6-api-changes)
 - [Troubleshooting](#troubleshooting)
 - [Review checklist](#review-checklist)
@@ -54,37 +55,37 @@ one object.
 [RequireComponent(typeof(Rigidbody))]
 public class Mover : MonoBehaviour
 {
-    [SerializeField] private float m_thrust = 10f;
-    [SerializeField] private float m_jumpImpulse = 5f;
+    [SerializeField] private float _thrust = 10f;
+    [SerializeField] private float _jumpImpulse = 5f;
 
-    private Rigidbody m_rigidbody;
-    private Vector3 m_moveInput;
-    private bool m_jumpQueued;
+    private Rigidbody _rigidbody;
+    private Vector3 _moveInput;
+    private bool _jumpQueued;
 
     private void Awake()
     {
-        m_rigidbody = GetComponent<Rigidbody>();
+        _rigidbody = GetComponent<Rigidbody>();
     }
 
     private void Update()
     {
         // Read input here — Update runs once per frame, FixedUpdate may not run at all.
-        m_moveInput = ReadMoveInput();
+        _moveInput = ReadMoveInput();
 
         if (WasJumpPressed())
         {
-            m_jumpQueued = true;
+            _jumpQueued = true;
         }
     }
 
     private void FixedUpdate()
     {
-        m_rigidbody.AddForce(m_moveInput * m_thrust, ForceMode.Force);
+        _rigidbody.AddForce(_moveInput * _thrust, ForceMode.Force);
 
-        if (m_jumpQueued)
+        if (_jumpQueued)
         {
-            m_rigidbody.AddForce(Vector3.up * m_jumpImpulse, ForceMode.Impulse);
-            m_jumpQueued = false;
+            _rigidbody.AddForce(Vector3.up * _jumpImpulse, ForceMode.Impulse);
+            _jumpQueued = false;
         }
     }
 }
@@ -178,6 +179,10 @@ only when at least one of the two objects has a Rigidbody, kinematic or not.
 - ⚠️ `OnCollisionEnter` receives a `Collision`; `OnTriggerEnter` receives a `Collider`. They are
   not interchangeable, and writing the wrong signature fails silently — Unity simply never calls it.
 - ⚠️ Both objects receive the callback. Don't apply an effect on both sides or it happens twice.
+- ⚠️ With `Physics.reuseCollisionCallbacks` on, one `Collision` instance is reused for every `OnCollision*` call,
+  so its contents change after your callback returns. Copy what you need (contact points, impulse, the other
+  collider) during the callback; never store the `Collision` itself. Keep the setting on — it avoids an
+  allocation per callback — and check it on a project upgraded from an older Unity, where it may be off.
 
 ```csharp
 private void OnTriggerEnter(Collider other)
@@ -191,7 +196,7 @@ private void OnTriggerEnter(Collider other)
     // TryGetComponent avoids the null-check-after-GetComponent dance.
     if (other.TryGetComponent(out Health health))
     {
-        health.ApplyDamage(m_damage);
+        health.ApplyDamage(_damage);
     }
 }
 ```
@@ -211,6 +216,9 @@ private void OnTriggerEnter(Collider other)
   or a primitive.
 - ✅ Author collision geometry separately from render geometry. A 20k-triangle visual mesh reused as
   a collider is a common and expensive mistake.
+- ❌ **Don't move, rotate, scale or toggle a static collider** (a collider with no Rigidbody) at runtime. The
+  physics system assumes static geometry doesn't move: it won't wake bodies resting on it, and contacts can go
+  wrong. If it moves, give it a **kinematic** Rigidbody.
 
 ---
 
@@ -238,6 +246,9 @@ correctness:
   the project default.
 - ℹ️ `Physics.queriesHitTriggers` is a **`bool`** project-wide default, not an enum. The per-query
   `QueryTriggerInteraction` parameter overrides it.
+- ⚠️ A non-allocating query (`RaycastNonAlloc`, `OverlapSphereNonAlloc`, …) returns a **count**. Only indices
+  below it are this query's results; everything after is stale from an earlier call. Hits beyond the buffer's
+  length are silently dropped, so size the buffer for the most hits you need.
 - ✅ Batch many independent raycasts with `RaycastCommand.ScheduleBatch` and the Jobs system. AI
   line-of-sight checks across dozens of agents is the case this exists for.
 - ⚠️ Queries read the physics scene's state, not the transform's. After writing a transform, a
@@ -254,6 +265,35 @@ correctness:
 - ✅ `Physics.simulationMode` defaults to `SimulationMode.FixedUpdate`. Set it to
   `SimulationMode.Script` and drive `Physics.Simulate(dt)` yourself only for deterministic ticks or
   netcode rollback.
+- ✅ **Turn the simulation off where nothing needs it** — menus, loading screens, a meta-game scene. Unity steps
+  physics every fixed step even with no physics objects in the scene. Set `SimulationMode.Script` and don't call
+  `Simulate`, then restore `SimulationMode.FixedUpdate` when gameplay resumes.
+- ℹ️ `Physics.autoSimulation` is obsolete — replaced by `Physics.simulationMode`. Older code and tutorials still
+  use it.
+
+```csharp
+// e.g. from the service that owns game-state transitions
+public void SetGameplayPhysics(bool isGameplayActive)
+{
+    Physics.simulationMode = isGameplayActive ? SimulationMode.FixedUpdate : SimulationMode.Script;
+}
+```
+
+---
+
+## Sleeping
+
+A Rigidbody whose motion stays below a threshold goes to sleep and costs almost nothing until something wakes
+it.
+
+- ℹ️ **Sleep Threshold** (Project Settings → Physics) is the mass-normalized kinetic energy below which bodies
+  sleep. Higher sleeps sooner — cheaper, but a slow body can stop abruptly. Lower is more accurate and costs more.
+- ✅ Override it per body with `Rigidbody.sleepThreshold` when the project value is wrong for that object, rather
+  than changing it for everything.
+- ✅ Check that bodies which should be idle actually are: `Rigidbody.IsSleeping()`, the **Physics Debugger**, or
+  the Profiler's Physics module (active vs sleeping body counts).
+- ℹ️ `WakeUp()` and `Sleep()` force the state. Remember that a static collider moved at runtime won't wake the
+  bodies resting on it — see [Colliders](#colliders).
 
 ---
 
@@ -269,6 +309,7 @@ Renamed in Unity 6. The old names are obsolete, and they are what most training 
 | `Rigidbody2D.velocity` | `Rigidbody2D.linearVelocity` |
 | `Rigidbody2D.drag` | `Rigidbody2D.linearDamping` |
 | `Rigidbody2D.angularDrag` | `Rigidbody2D.angularDamping` |
+| `Physics.autoSimulation` | `Physics.simulationMode` (obsolete since 2022.2) |
 
 - ⚠️ **`AddForceAtPosition` and `AddExplosionForce` changed behaviour.** Angular force is now scaled
   by the body's inertia tensor rather than its mass. Code ported from an earlier version that
@@ -315,6 +356,14 @@ frame time; profile it.
 Contact stiffness against gravity. Raise Default Solver Iterations, or increase the mass ratio
 tolerance — a 1000:1 mass ratio between touching bodies is unstable by nature.
 
+**Contact data is wrong when read later.**
+The `Collision` was stored and read after the callback. With `reuseCollisionCallbacks` on it's been reused —
+copy the values inside the callback.
+
+**Objects float in the air after the platform under them is moved or disabled.**
+The platform is a static collider, so moving it doesn't wake the bodies resting on it. Give it a kinematic
+Rigidbody.
+
 **A ragdoll explodes on activation.**
 Interpenetrating colliders at the moment of enabling. Ensure limbs don't overlap in the bind pose,
 and disable collision between adjacent bones.
@@ -337,14 +386,18 @@ and disable collision between adjacent bones.
 | Colliders | MeshCollider where a primitive or compound would do |
 | Colliders | Convex MeshCollider over 255 triangles |
 | Colliders | Non-convex MeshCollider on a non-kinematic Rigidbody |
+| Colliders | A static collider (no Rigidbody) moved, scaled or toggled at runtime |
+| Callbacks | A `Collision` stored and read after `OnCollision*` returns |
 | Tunnelling | Fast body left on `Discrete` |
 | Tunnelling | Continuous set on only one side of the pair |
 | Tunnelling | Continuous detection expected from a MeshCollider |
 | Interpolation | `Interpolate` on every Rigidbody rather than the tracked ones |
 | Queries | Raycast with no layer mask or no max distance |
 | Queries | Query immediately after a transform write, with no `SyncTransforms` |
+| Queries | A non-alloc result buffer iterated past the returned count |
+| Simulation | Physics stepping in menus or loading screens that use none |
 | Settings | Layer Collision Matrix left fully enabled |
-| Unity 6 | `.velocity`, `.drag`, `.angularDrag` |
+| Unity 6 | `.velocity`, `.drag`, `.angularDrag`, `Physics.autoSimulation` |
 
 ---
 

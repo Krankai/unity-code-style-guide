@@ -18,14 +18,17 @@ detection, the `unity-project-review` skill covers that. This skill answers a na
 1. **Locate the guides.** Look for `UnityStyleGuide.md`, `AGENTS.md`, or `UnityReferenceGuides/` in
    the project root, a parent directory, or a sibling checkout. If none exist, ask the user where
    they are — do not audit against remembered defaults.
-2. **Know which guides exist.** `UnityReferenceGuides/` currently holds: Performance, Assets &
-   Memory, Design Patterns, Scenes & Lifecycle, UI Toolkit, uGUI, Input System, Animation, Audio,
-   Assembly Definitions, Testing, Editor Tooling, Debugging. Cite the specific one in every finding.
+2. **Know which guides exist.** `UnityReferenceGuides/` currently holds: Architecture, UniTask,
+   ScriptableObject, Performance, Assets & Memory, Design Patterns, Scenes & Lifecycle, uGUI, UI Toolkit,
+   Input System, Physics, Animation, Audio, Assembly Definitions, Testing, Editor Tooling, Debugging. Cite the
+   specific one in every finding.
 3. **Read the tech stack.** `UnityCustomInstructions/UnityTechStack.md` says which input, UI, and
-   render systems are in use. A uGUI finding is noise in a UI Toolkit project.
+   render systems are in use, and which packages the project is on (UniTask, VContainer, R3,
+   MessagePipe). A uGUI finding is noise in a UI Toolkit project, and the Async, Events and Architecture
+   checks below only apply when the project uses that package.
 4. **Confirm the scope** with the user: whole project, one folder, or changes on the current branch.
-5. **Establish the naming convention from the guide, not from memory.** The prefixes (`m_`/`k_`/`s_`)
-   and their casing are configurable preferences. Read them out of the guide before flagging anything.
+5. **Establish the naming convention from the guide, not from memory.** The `_` prefix and the casing rules
+   for fields, constants and statics are configurable preferences. Read them out of the guide before flagging anything.
 
 ## Phase 1 — Static analysis (always runs)
 
@@ -58,16 +61,22 @@ this is the one finding where a count is not enough.
 
 | Check | How |
 |---|---|
-| Private fields missing the `m_` prefix | Fields declared `private`/implicit without the prefix |
-| Wrong casing after a prefix | `m_`/`k_`/`s_` followed by an uppercase letter, when the guide says camelCase |
+| Private fields missing the `_` prefix | Fields declared `private`/implicit without the prefix |
+| Wrong casing after the prefix | `_` followed by an uppercase letter, when the guide says camelCase |
 | `public` fields on MonoBehaviours | Should be `[SerializeField] private` plus a property |
-| Constants not using `k_` | `private const` without the prefix (public consts on lookup classes are exempt) |
-| Statics not using `s_` | `static` fields without the prefix |
+| Constants not in PascalCase | `const` or `static readonly` fields, any accessibility, not in PascalCase — including `k_` prefixes and SCREAMING_CASE |
+| Mutable statics missing `_` | non-readonly `static` fields without the `_` prefix |
 | Interfaces without `I` | `interface` declarations |
 | Booleans not reading as predicates | `bool` fields/properties not starting with is/has/can/should |
 | Methods not starting with a verb | Especially gerunds (`Walking()`) |
 | Missing explicit `private` | Members with no access modifier, if the guide requires it |
-| ScriptableObjects without the suffix | Types deriving `ScriptableObject` |
+| ScriptableObjects without the `Config` suffix | Types deriving `ScriptableObject` (the suffix is configurable — read it from the guide) |
+| `[CreateAssetMenu]` off-template | `fileName` not equal to the class name, or `menuName` not `"<Category>/<Asset Name>"` |
+| Async naming | Project methods returning `UniTask`/`Task`/`Awaitable` with an `Async` suffix or no `Task` prefix (Unity and third-party APIs keep theirs) |
+| Coroutine naming | `IEnumerator` methods started as coroutines without the `Routine` suffix |
+| Event naming | An R3 observable not named `On` + past tense; an `event Action` named with `On`, or not in the past tense |
+| Handler naming | Methods subscribed to events/observables, or animation event receivers, not named `Handle*` |
+| Controller naming | A `MonoBehaviour` named `*Controller` — reserved for the plain C# MVC Controller |
 
 ### Class organization
 
@@ -86,19 +95,24 @@ Inside `Update`, `FixedUpdate`, `LateUpdate`, and `OnGUI`:
 - LINQ (`.Where`, `.Select`, `.OrderBy`, `.ToList`, `.Any`, `.First`)
 - String concatenation or `$"..."` interpolation
 - `Physics.*` queries without a layer mask, or using the allocating overload
-- `Debug.Log` calls
+- `Debug.Log` or `AppLogger.Log` calls
+- `.text = value.ToString()` on a TextMeshPro label instead of `SetText`
 - `SetBool`/`SetFloat`/`SetTrigger` with a string literal instead of a cached hash
 
 ### Lifecycle and leaks
 
-- `+=` in `OnEnable` with no matching `-=` in `OnDisable` (the highest-value check in this list).
+- `+=` in `OnEnable` with no matching `-=` in `OnDisable` (the highest-value check in this list). Applies to
+  plain C# events — Unity's, Input System actions, third-party, and the `event Action` fallback.
 - Event subscriptions using a lambda — impossible to unsubscribe.
-- `AddListener` on a `UnityEvent` with no matching `RemoveListener`, especially on pooled prefabs.
+- `AddListener` on a `UnityEvent` with no matching `RemoveListener`, especially on pooled prefabs. (Where R3 is
+  in use, the convention finding is the `AddListener` itself — see Events and R3.)
 - `static` fields or `static event` on a class with no `[RuntimeInitializeOnLoadMethod]` reset, when
   Domain Reload is disabled in `ProjectSettings/EditorSettings.asset`.
 - `NativeArray`/`NativeList` allocated without a `Dispose`.
 - `Addressables.LoadAssetAsync` without a matching `Release`; `Destroy` used on an instance created
   by `InstantiateAsync`.
+- Runtime-created `Texture2D` / `Sprite` / `Material` / `Mesh` / `RenderTexture` never `Destroy`ed; a
+  `PlayableGraph` never `Destroy()`ed.
 
 ### Unity 6 API currency
 
@@ -111,6 +125,7 @@ Inside `Update`, `FixedUpdate`, `LateUpdate`, and `OnGUI`:
   correct forms through 6000.5, so flagging them on an older project is a false positive.
 - `Rigidbody.velocity` / `.drag` / `.angularDrag` — renamed to `linearVelocity` / `linearDamping` /
   `angularDamping`. Same for `Rigidbody2D`.
+- `Physics.autoSimulation` — obsolete; use `Physics.simulationMode`.
 - `Graphics.DrawMesh` / `DrawMeshInstanced` / `DrawMeshInstancedIndirect` — replaced by
   `RenderMesh` / `RenderMeshInstanced` / `RenderMeshIndirect` with `RenderParams`.
 - `ParticleSystem.emissionRate` / `.enableEmission` — use the `emission` module.
@@ -121,10 +136,59 @@ Inside `Update`, `FixedUpdate`, `LateUpdate`, and `OnGUI`:
 - `ScriptableRenderPass.Execute`, `RenderTargetHandle`, `ScriptableRenderer.cameraColorTarget` —
   Render Graph replaced these; use `RecordRenderGraph`, `RTHandle`/`TextureHandle`,
   `cameraColorTargetHandle`.
-- Coroutines used for simple delays where `Awaitable` fits, if the tech stack prefers `Awaitable`.
+- Coroutines used for simple delays where the tech stack's async choice (UniTask, or `Awaitable`) fits.
 - `async void` on anything other than an event handler.
 - `.material` where `.sharedMaterial` was intended.
 - Legacy `Input.GetKey` / `Input.GetAxis` when the project uses the Input System.
+
+### Async (UniTask)
+
+Only if the tech stack says UniTask.
+
+- `Awaitable` or `Task` used for gameplay async code.
+- An async method body with no `try`/`catch`, or a catch that swallows `OperationCanceledException` instead of
+  rethrowing it.
+- A `UniTaskVoid` call with no `.Forget()`.
+- A `MonoBehaviour`'s async method with no cancellation token, or `this == null` checks after an `await` where
+  `GetCancellationTokenOnDestroy()` belongs.
+- `.ToUniTask()` on `SceneManager.LoadSceneAsync` (it reorders `Start`; await the operation directly).
+- A polling `WaitUntil`/`WaitWhile` lambda that captures `this` or a local, where the closure-free `state`
+  overload fits.
+
+### Events and R3
+
+Only if the tech stack says R3.
+
+- A hand-written `event Action` in an assembly that can reference R3.
+- A `Subject<T>` exposed publicly instead of as `Observable<T>`; an owned `Subject` never disposed in `OnDestroy`.
+- A `.Subscribe(...)` whose result isn't attached with `.AddTo(...)` (or otherwise disposed).
+- `.AddTo(this)` inside `OnEnable` — duplicates on every re-enable.
+- A `DisposableBag` in a `readonly` field, or copied by value.
+- `AddListener` on a uGUI component from code, where `OnClickAsObservable()` / `.AsObservable(...)` belongs.
+- A `UnityEvent` field used only from code — report it for review; it's correct only when designers wire it in
+  the Inspector.
+
+### Architecture
+
+Only if the tech stack says VContainer.
+
+- A service constructed with `new` outside a `LifetimeScope`, or resolved through a static locator
+  (`ServiceLocator`).
+- A `static Instance` singleton with no comment at the declaration stating why it was necessary.
+- A Controller that is a `MonoBehaviour`, or a Controller with no interface.
+- Per-entity runtime state stored in a ScriptableObject instead of a plain C# Model.
+- `LoadSceneMode.Single` after the boot scene — it unloads the boot scope.
+- A scene `LifetimeScope` loaded with neither `EnqueueParent` around its activating call nor a Parent type
+  set; `EnqueueParent` around the load call when `activateOnLoad: false` (it belongs around `ActivateAsync()`).
+- The boot `LifetimeScope`'s `Configure` with no guard against running twice.
+- A MessagePipe broker for an event that isn't one of the four reserved cases in the Architecture guide —
+  report for review, since intent can't be read from code alone.
+
+### Logging
+
+- `Debug.Log` / `Debug.LogWarning` in committed runtime code instead of the project's `AppLogger`.
+- The logging wrapper's `Log`/`LogWarning` missing `[Conditional("ENABLE_LOGS")]`, or `LogError`/`LogException`
+  marked conditional (errors would vanish from release builds).
 
 ### Physics
 
@@ -141,6 +205,9 @@ Inside `Update`, `FixedUpdate`, `LateUpdate`, and `OnGUI`:
   triangles.
 - A fast-moving body left on `Discrete` collision detection, or continuous set on only one side of
   the pair.
+- A `Collision` stored in a field and read after `OnCollision*` returns.
+- A non-alloc query's buffer iterated to its length instead of the returned count.
+- A collider with no `Rigidbody` moved, scaled or toggled at runtime.
 
 ### ScriptableObjects
 
@@ -163,6 +230,10 @@ Inside `Update`, `FixedUpdate`, `LateUpdate`, and `OnGUI`:
 - `.text` assigned unconditionally inside `Update`.
 - `Instantiate` of a row prefab inside a loop with no pooling.
 - `Canvas.ForceUpdateCanvases()` anywhere.
+- `SetActive` used to show/hide screens that are toggled often, where a `CanvasGroup` belongs (fine only to stop
+  heavy per-frame logic); a `CanvasGroup` hidden without `blocksRaycasts = false`.
+- A transparent `Image` used as an input blocker instead of `RaycastReceiver` (Unity 6.5+) or
+  `NonDrawingGraphic`.
 
 ### Input System
 
@@ -236,10 +307,13 @@ What to check here:
 | References | Serialized `[SerializeField]` fields that are null in a scene or prefab |
 | Prefabs | Instances with unexpected override drift |
 | Textures | `isReadable` true (doubles memory); oversized `maxTextureSize`; mip maps on UI sprites |
+| Meshes | Read/Write on for meshes nobody modifies; Mesh Compression relied on for memory (it only shrinks the file) |
+| Import enforcement | No `AssetPostprocessor` rule or Preset covering a folder of assets on default settings |
+| uGUI batching | `Image`/`RawImage` with no sprite (renders with `UnityWhite`) on an atlased Canvas |
 | Audio | Long clips not set to Streaming; 3D sources not Force-To-Mono |
 | Scene cost | Count of components implementing `Update` per scene |
 | Build | Scenes in Build Settings that no longer exist |
-| Animation | Animator Culling Mode at `AlwaysAnimate`; `Has Exit Time` on responsive transitions |
+| Animation | Animator Culling Mode at `AlwaysAnimate`; `Has Exit Time` on responsive transitions; Anim. Compression `Off` |
 | Audio | Active `AudioListener` count; sources with no mixer group; `spatialBlend` 0 on 3D sources |
 | Lighting | Scenes with no baked lighting data where it was expected |
 
@@ -254,7 +328,7 @@ Group findings by severity, most severe first. For each:
 
 | Severity | Means |
 |---|---|
-| 🔴 High | Correctness, leaks, or a build-breaking issue. Event never unsubscribed; Editor code in a build; test assembly shipping. |
+| 🔴 High | Correctness, leaks, or a build-breaking issue. Event never unsubscribed; R3 subscription never disposed; `LoadSceneMode.Single` after boot; Editor code in a build; test assembly shipping. |
 | 🟠 Medium | Real performance or maintenance cost. Allocation in `Update`; monolithic Canvas; Read/Write textures. |
 | 🟡 Low | Convention drift with no functional impact. Prefix casing; member ordering. |
 

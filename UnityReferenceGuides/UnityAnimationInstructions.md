@@ -25,6 +25,7 @@ Table of contents:
 - [Animation events](#animation-events)
 - [AnimatorOverrideController](#animatoroverridecontroller)
 - [Root motion](#root-motion)
+- [Import settings](#import-settings)
 - [Performance](#performance)
 - [Troubleshooting](#troubleshooting)
 - [Review checklist](#review-checklist)
@@ -54,17 +55,17 @@ public static class PlayerAnimatorParams
 [RequireComponent(typeof(Animator))]
 public class PlayerAnimatorDriver : MonoBehaviour
 {
-    private Animator m_animator;
+    private Animator _animator;
 
     private void Awake()
     {
-        m_animator = GetComponent<Animator>();
+        _animator = GetComponent<Animator>();
     }
 
     public void SetMovement(float speed, bool isGrounded)
     {
-        m_animator.SetFloat(PlayerAnimatorParams.Speed, speed);
-        m_animator.SetBool(PlayerAnimatorParams.IsGrounded, isGrounded);
+        _animator.SetFloat(PlayerAnimatorParams.Speed, speed);
+        _animator.SetBool(PlayerAnimatorParams.IsGrounded, isGrounded);
     }
 }
 ```
@@ -85,11 +86,11 @@ public class PlayerAnimatorDriver : MonoBehaviour
 
 ```csharp
 // ❌ Two scripts writing the same parameter - last writer per frame wins, unpredictably
-// PlayerMovement.cs:  m_animator.SetFloat(Speed, m_velocity.magnitude);
-// PlayerCombat.cs:    m_animator.SetFloat(Speed, 0f);
+// PlayerMovement.cs:  _animator.SetFloat(Speed, _velocity.magnitude);
+// PlayerCombat.cs:    _animator.SetFloat(Speed, 0f);
 
 // ✅ One driver, fed by both systems
-public void SetMovement(float speed) => m_animator.SetFloat(PlayerAnimatorParams.Speed, speed, 0.1f, Time.deltaTime);
+public void SetMovement(float speed) => _animator.SetFloat(PlayerAnimatorParams.Speed, speed, 0.1f, Time.deltaTime);
 ```
 
 ---
@@ -113,8 +114,8 @@ public void SetMovement(float speed) => m_animator.SetFloat(PlayerAnimatorParams
 public void Jump()
 {
     // Clear any stale queued jump before setting a fresh one
-    m_animator.ResetTrigger(PlayerAnimatorParams.JumpTrigger);
-    m_animator.SetTrigger(PlayerAnimatorParams.JumpTrigger);
+    _animator.ResetTrigger(PlayerAnimatorParams.JumpTrigger);
+    _animator.SetTrigger(PlayerAnimatorParams.JumpTrigger);
 }
 ```
 
@@ -134,7 +135,7 @@ public void Jump()
 
 ```csharp
 // Blend to a state over 0.1 real seconds, regardless of clip length
-m_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
+_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
 ```
 
 - ✅ **Interruption Source** on a transition controls whether it can be cut short. Default is `None`,
@@ -178,6 +179,9 @@ m_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
   must be public. Otherwise Unity logs a warning at runtime and nothing happens.
 - ⚠️ Signatures are restricted: no parameters, or exactly one `int`, `float`, `string`,
   `AnimationEvent`, or `Object` reference. You cannot pass two values.
+- ✅ Name receivers `Handle*` like any other callback (`HandleFootstep`) — `On` + past tense is reserved for R3
+  observables. The clip calls the receiver **by name**, so renaming one in a real project means updating the
+  event on every clip that calls it.
 - ✅ Group event handlers in a `#region` so it's obvious they're called from outside the code — this
   is the sanctioned use of regions in the
   [style guide](../UnityStyleGuide.md#use-of-regions).
@@ -189,20 +193,20 @@ m_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
 [RequireComponent(typeof(Animator))]
 public class PlayerAnimationEvents : MonoBehaviour
 {
-    [SerializeField] private WeaponHitbox m_hitbox;
-    [SerializeField] private FootstepPlayer m_footsteps;
+    [SerializeField] private WeaponHitbox _hitbox;
+    [SerializeField] private FootstepPlayer _footsteps;
 
     #region Animation Event Methods
     // Called from the attack clip on the contact frame
-    public void OnAttackContact()
+    public void HandleAttackContact()
     {
-        m_hitbox.EnableForWindow();
+        _hitbox.EnableForWindow();
     }
 
     // Called from locomotion clips; int selects the foot
-    public void OnFootstep(int footIndex)
+    public void HandleFootstep(int footIndex)
     {
-        m_footsteps.Play(footIndex);
+        _footsteps.Play(footIndex);
     }
     #endregion
 }
@@ -221,9 +225,9 @@ public class PlayerAnimationEvents : MonoBehaviour
   the indexer overload rebuilds the table on every assignment.
 
 ```csharp
-private void ApplyWeaponAnimations(WeaponDataSO weapon)
+private void ApplyWeaponAnimations(WeaponConfig weapon)
 {
-    var overrideController = new AnimatorOverrideController(m_baseController);
+    var overrideController = new AnimatorOverrideController(_baseController);
 
     var overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>(overrideController.overridesCount);
     overrideController.GetOverrides(overrides);
@@ -238,7 +242,7 @@ private void ApplyWeaponAnimations(WeaponDataSO weapon)
     }
 
     overrideController.ApplyOverrides(overrides);   // One rebuild, not one per clip
-    m_animator.runtimeAnimatorController = overrideController;
+    _animator.runtimeAnimatorController = overrideController;
 }
 ```
 
@@ -260,13 +264,28 @@ private void OnAnimatorMove()
 {
     // Take the animation's intended motion, apply it through the CharacterController
     // so collision is still respected.
-    Vector3 delta = m_animator.deltaPosition;
-    delta.y = m_verticalVelocity * Time.deltaTime;   // Gravity stays ours
+    Vector3 delta = _animator.deltaPosition;
+    delta.y = _verticalVelocity * Time.deltaTime;    // Gravity stays ours
 
-    m_characterController.Move(delta);
-    transform.rotation *= m_animator.deltaRotation;
+    _characterController.Move(delta);
+    transform.rotation *= _animator.deltaRotation;
 }
 ```
+
+---
+
+## Import settings
+
+Set on the model's import settings, **Animation** tab.
+
+- ✅ **Anim. Compression**: `Keyframe Reduction` removes keys that stay within an error tolerance of the curve —
+  **Rotation Error** in degrees, **Position Error** and **Scale Error** in percent. Raise the tolerances until
+  motion visibly changes, then back off.
+- ✅ `Optimal` lets Unity choose, per curve, between keyframe reduction and a dense format — usually the smallest
+  result, but dense curves can look noisier. Check the clips visually rather than trusting the size win.
+- ✅ Import animation only where it's used — see
+  [Mesh & model import settings](UnityAssetsAndMemoryInstructions.md#mesh--model-import-settings) for turning it
+  off on static props.
 
 ---
 
@@ -277,13 +296,24 @@ private void OnAnimatorMove()
 - ✅ Set **Culling Mode** to `Cull Update Transforms` (stops writing transforms offscreen) or
   `Cull Completely` (stops evaluating entirely). The default, `Always Animate`, evaluates offscreen
   characters forever.
+  - ⚠️ `Cull Update Transforms` keeps the state machine running but skips transform and IK writes, so a
+    transform-driven effect (physics jiggle, attachments) can visibly jump when the character comes back into view.
+  - ⚠️ `Cull Completely` stops the state machine offscreen, so root motion that should walk a character back
+    into view never advances. Use `Cull Update Transforms` or `Always Animate` for those.
+- ✅ For a lower update rate than Culling Mode offers (distant but visible characters), disable the `Animator`
+  component and call `animator.Update(deltaTime)` yourself at the rate you want.
 - ✅ Disable the Animator component outright for characters that are idle and far away.
+- ✅ Lower **Skin Weights** (Project Settings → Quality, or `QualitySettings.skinWeights`) on quality levels that
+  can afford it — fewer bone influences per vertex makes skinning cheaper. Check the result: too few can visibly
+  distort a mesh at joints.
 - ✅ Tick **Optimize Game Objects** on the model importer to collapse the bone hierarchy into an
   internal representation. Expose only the bones you actually need to attach things to.
 - ⚠️ Never put an `Animator` on uGUI elements — it dirties the canvas every frame. See
   [uGUI](UnityUGUIInstructions.md#never-animate-ui-with-an-animator).
 - ✅ For simple, non-blended motion (a rotating pickup, a bobbing platform), plain code in `Update`
   is far cheaper than an Animator.
+- ℹ️ Engine-wide Animator cost and the other rendering levers are in
+  [Performance](UnityPerformanceOptimizationInstructions.md#animator-cost).
 - ℹ️ Profiler markers to watch: `Animators.Update`, `MeshSkinning.Update`, `Animation.Rebind`.
   `Animation.Rebind` appearing every frame means something is reassigning the controller.
 
@@ -299,16 +329,16 @@ controller. Unity does not warn about this.
 // Diagnostic: dump the Animator's actual state
 private void LogAnimatorState()
 {
-    Debug.Log($"Controller: {m_animator.runtimeAnimatorController?.name ?? "NONE"}", this);
-    Debug.Log($"Enabled: {m_animator.enabled}, Speed: {m_animator.speed}, " +
-              $"Culling: {m_animator.cullingMode}");
+    Debug.Log($"Controller: {_animator.runtimeAnimatorController?.name ?? "NONE"}", this);
+    Debug.Log($"Enabled: {_animator.enabled}, Speed: {_animator.speed}, " +
+              $"Culling: {_animator.cullingMode}");
 
-    foreach (AnimatorControllerParameter p in m_animator.parameters)
+    foreach (AnimatorControllerParameter p in _animator.parameters)
     {
         Debug.Log($"  param '{p.name}' ({p.type})");   // Compare against your constants
     }
 
-    AnimatorStateInfo state = m_animator.GetCurrentAnimatorStateInfo(0);
+    AnimatorStateInfo state = _animator.GetCurrentAnimatorStateInfo(0);
     Debug.Log($"  layer 0 state hash {state.shortNameHash}, normalized time {state.normalizedTime:F2}");
 }
 ```
@@ -352,10 +382,11 @@ The state isn't reachable — no transition path from the default state, or the 
 | Triggers | `SetTrigger` with no `ResetTrigger` on interruption paths |
 | Triggers | A trigger used where a bool would model the state better |
 | Transitions | `Has Exit Time` on for responsive gameplay actions |
-| Events | Handler not public, or not on the Animator's GameObject |
+| Events | Handler not public, or not on the Animator's GameObject; receiver not named `Handle*` |
 | Override controllers | Created per instance instead of cached |
 | Root motion | Root motion and scripted movement on the same axis |
-| Culling | Culling Mode left at `Always Animate` |
+| Culling | Culling Mode left at `Always Animate`; `Cull Completely` on a character whose root motion must bring it back into view |
+| Import | Anim. Compression `Off`, or tolerances never tuned |
 | UI | An `Animator` on a GameObject with a `Graphic` |
 | Cost | An Animator used for simple constant motion |
 

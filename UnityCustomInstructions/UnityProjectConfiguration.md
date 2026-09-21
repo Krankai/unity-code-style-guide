@@ -39,18 +39,19 @@ With domain reload disabled, **static fields persist between play sessions**:
 
 ```csharp
 // This value WON'T reset when you stop and start play mode
-private static int s_playerCount = 0;
+private static int _playerCount;
 
 // Fix: Reset in RuntimeInitializeOnLoadMethod
 [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
 private static void ResetStatics()
 {
-    s_playerCount = 0;
+    _playerCount = 0;
 }
 ```
 
 **Also affected:**
 - Static events (subscribers accumulate across plays)
+- Static R3 `Subject`s (dispose and recreate them in the reset)
 - Singleton instances
 - Static collections and caches
 
@@ -90,6 +91,10 @@ See [Unity Documentation: Domain Reloading](https://docs.unity3d.com/Manual/Doma
 
 Presets standardize import settings for assets. Located at `Assets/Settings/Presets/`.
 
+> ℹ️ This is the no-code starting point. The recommended baseline is a scripted `AssetPostprocessor` that
+> re-applies the rules on every import and reimport — see
+> [Enforcing import settings](../UnityReferenceGuides/UnityAssetsAndMemoryInstructions.md#enforcing-import-settings).
+
 ### Texture Import Presets
 
 | Preset | Use Case | Key Settings |
@@ -105,7 +110,7 @@ Located at `Assets/Settings/Presets/Audio/`:
 
 | Preset | Use Case | Typical Settings |
 |--------|----------|------------------|
-| `MusicAudioImporter` | Background music | Streaming, high quality, no compression |
+| `MusicAudioImporter` | Background music | Streaming, Vorbis |
 | `AmbienceAudioImporter` | Environmental loops | Compressed in memory, loop-friendly |
 | `SFXAudioImporter` | Sound effects | Decompress on load, low latency |
 | `UIAudioImporter` | UI feedback sounds | Small files, decompress on load |

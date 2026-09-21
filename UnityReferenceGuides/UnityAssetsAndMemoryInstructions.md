@@ -18,7 +18,7 @@ Table of contents:
 - [Texture import settings](#texture-import-settings)
 - [Mesh & model import settings](#mesh--model-import-settings)
 - [Audio import settings](#audio-import-settings)
-- [Presets: enforce settings automatically](#presets-enforce-settings-automatically)
+- [Enforcing import settings](#enforcing-import-settings)
 - [Managed memory & the garbage collector](#managed-memory--the-garbage-collector)
 - [Build size](#build-size)
 - [Measuring](#measuring)
@@ -62,11 +62,13 @@ Unity has two separate heaps, and conflating them wastes a lot of debugging time
 - ✅ Use direct references for what's always needed and Addressables for everything else.
 - ℹ️ `Resources/` is fine for a jam game or a throwaway prototype. It is not fine for anything you
   intend to ship.
+- ⚠️ `StreamingAssets/` is also copied into the build whole, referenced or not, and nothing in code can tell you
+  an entry is unused. Audit it by hand periodically.
 
 ### Direct references are not free
 
 - ⚠️ Every direct reference in a prefab or scene is loaded **when that prefab or scene loads**,
-  transitively. A prefab referencing a `WeaponDataSO` that references a 4K icon loads that icon,
+  transitively. A prefab referencing a `WeaponConfig` that references a 4K icon loads that icon,
   even if the weapon is never equipped.
 - ✅ Break the chain with an `AssetReference` (Addressables) when the tail of the graph is large or
   rarely needed.
@@ -83,44 +85,87 @@ Unity has two separate heaps, and conflating them wastes a lot of debugging time
   `Destroy`. Using `Destroy` leaks the reference count and the asset never unloads.
 - ⚠️ **The duplicate-asset trap:** if two Addressable groups each reference the same texture and it
   isn't itself marked Addressable, it is duplicated into both bundles — two copies on disk *and* two
-  copies in memory. Run the **Analyze → Check Duplicate Bundle Dependencies** rule before shipping.
+  copies in memory. The fix is to give every asset used by more than one group a home of its own — a dedicated
+  **Shared** group that the others depend on.
+- ✅ Run **Analyze → Check Duplicate Bundle Dependencies** before shipping. It finds exactly this pattern and can
+  move the shared assets into a new group for you.
+- ⚠️ The Analyze rule can report a false positive for an asset with several sub-objects (an FBX with multiple
+  meshes) when different groups use *different* sub-objects of it. Check before accepting its fix.
 - ✅ Group by *when things are needed together*, not by asset type. A "Level 3" group beats a
   "Textures" group.
+- ⚠️ Granularity is a trade-off: one huge bundle forces a full re-download for any single change; one bundle per
+  asset adds per-bundle overhead. Keep assets that are always used together in one bundle, and assets used by
+  several independently loaded features in their own.
+- ⚠️ **A bundle stays loaded while any asset from it is still held.** Releasing most of a group's assets frees
+  nothing if one is still referenced.
+- ⚠️ **Loaded-bundle count has a ceiling** of its own, independent of memory: each loaded bundle holds a file
+  descriptor (an OS limit) and memory in `PersistentManager.Remapper`, which is pooled and does not shrink when
+  bundles unload. As a rough guideline from the
+  [Unity Performance Tuning Bible](https://cyberagentgameentertainment.github.io/UnityPerformanceTuningBible/en/),
+  keep simultaneously loaded bundles under about 150 (up to about 200 when bundles are unloaded with
+  `Unload(true)`). It matters when many small per-scene or per-feature groups are loaded at once.
 - ✅ Prefer `LoadAssetsAsync` for a batch over many individual awaits — fewer handles to track.
 
 ```csharp
 public class WeaponLoader : MonoBehaviour
 {
-    [SerializeField] private AssetReferenceGameObject m_weaponReference;
+    private const string DebugPrefix = "[WeaponLoader]";
 
-    private AsyncOperationHandle<GameObject> m_handle;
+    [SerializeField] private AssetReferenceGameObject _weaponReference;
 
-    private async Awaitable LoadAsync()
+    private AsyncOperationHandle<GameObject> _handle;
+
+    private async UniTask TaskLoadWeapon(CancellationToken token)
     {
-        m_handle = m_weaponReference.LoadAssetAsync<GameObject>();
-        await m_handle.Task;
-
-        if (this == null) return;   // Destroyed while loading
-
-        if (m_handle.Status != AsyncOperationStatus.Succeeded)
+        try
         {
-            Debug.LogError($"[{GetType().Name}] Failed to load weapon asset.", this);
-            return;
-        }
+            // Stored before awaiting, so OnDestroy can release it even if we're destroyed mid-load
+            _handle = _weaponReference.LoadAssetAsync<GameObject>();
+            await _handle.WithCancellation(token);   // Throws instead of resuming after Destroy()
 
-        Instantiate(m_handle.Result, transform);
+            if (_handle.Status != AsyncOperationStatus.Succeeded)
+            {
+                AppLogger.LogError($"{DebugPrefix} Failed to load weapon asset.", this);
+                return;
+            }
+
+            Instantiate(_handle.Result, transform);
+        }
+        catch (System.OperationCanceledException)
+        {
+            throw;
+        }
+        catch (System.Exception e)
+        {
+            AppLogger.LogException(e);
+        }
     }
 
     private void OnDestroy()
     {
         // Every load needs its release, or the bundle never unloads
-        if (m_handle.IsValid())
+        if (_handle.IsValid())
         {
-            Addressables.Release(m_handle);
+            Addressables.Release(_handle);
         }
     }
 }
+
+// Called as: TaskLoadWeapon(this.GetCancellationTokenOnDestroy()).Forget();
 ```
+
+- ℹ️ UniTask can await an `AsyncOperationHandle` directly once the Addressables package is installed;
+  `WithCancellation(token)` adds cancellation. See [UnityUniTaskInstructions.md](UnityUniTaskInstructions.md).
+
+### Raw AssetBundles
+
+Only for code that calls `AssetBundle` APIs directly — Addressables manages this through its reference counts.
+
+- ⚠️ `AssetBundle.Unload(false)` unloads the bundle but keeps the assets already loaded from it. They leak unless
+  `Resources.UnloadUnusedAssets()` runs later, and **loading the same asset again after reloading the bundle
+  creates a second copy**, not the original.
+- ⚠️ `AssetBundle.Unload(true)` destroys everything loaded from the bundle at once — no leak, but the bundle must
+  stay loaded for as long as any of its assets is in use.
 
 ---
 
@@ -140,6 +185,9 @@ Textures are almost always the largest single category. These four settings do m
   the texture from a script at runtime. Audit every texture that has it on.
 - ✅ Halving Max Size quarters the memory. 2048→1024 is a 75% saving, and on most assets nobody notices.
 - ✅ Set **sRGB (Color Texture)** on for albedo/UI, **off** for masks, roughness, and data maps.
+- ✅ **Aniso Level**: only for surfaces seen at shallow angles (floors, roads). `0` always disables it; the import
+  default `1` is effectively off unless Quality Settings' **Anisotropic Textures** is **Forced On**. The effect
+  changes in steps (roughly 0–1, 2–3, 4–7, 8+), so fine-tuning inside a step buys nothing.
 - ✅ Use **Override for Platform** — mobile wants ASTC and smaller max sizes than desktop.
 - ✅ Crunch compression shrinks the *download*, not runtime memory. Use it for build size, and expect
   slower import and load times.
@@ -155,8 +203,8 @@ Textures are almost always the largest single category. These four settings do m
 | Setting | Recommended | Why |
 |---|---|---|
 | **Read/Write Enabled** | Off | Same 2× penalty as textures |
-| **Mesh Compression** | Low/Medium for background geometry | Lossy but usually invisible |
-| **Optimize Mesh** | On | Reorders vertices for GPU cache coherence |
+| **Mesh Compression** | Off, unless build size is the problem | Lossy, and it only shrinks the **file** — the mesh is decompressed on load, so runtime memory is unchanged. It also disables Vertex Compression for that mesh |
+| **Optimize Mesh** | On | Reorders triangles/vertices for GPU cache coherence |
 | **Normals / Tangents** | Calculate only if the shader needs them | Skipping tangents saves per-vertex memory |
 | **Import BlendShapes** | Off unless used | Large per-vertex cost |
 | **Import Animation** | Off on static props | Animation clips are surprisingly large |
@@ -165,6 +213,14 @@ Textures are almost always the largest single category. These four settings do m
 - ⚠️ Read/Write is required for runtime mesh modification, `MeshCollider` baking at runtime, and some
   procedural workflows. It is not required for normal rendering.
 - ✅ Static geometry should be marked **Static** so it can be batched and light-mapped.
+- ✅ **Vertex Compression** (Player Settings → Other Settings) stores chosen vertex channels as FP16 instead of FP32,
+  cutting mesh memory, file size and GPU bandwidth. It only applies to a mesh with Read/Write **off**, Mesh
+  Compression **off**, that isn't skinned and isn't eligible for dynamic batching (dynamic batching is off on URP
+  anyway), on a platform that supports FP16.
+- ✅ **Optimize Mesh Data** (Player Settings → Other Settings) strips vertex attributes the mesh's materials don't
+  use, saving build size, load time and runtime memory.
+  - ⚠️ Don't change a material or shader at runtime to one that needs a stripped attribute, and watch meshes used
+    only by another system (e.g. a Particle System) whose material wasn't what Unity checked.
 
 ---
 
@@ -174,7 +230,7 @@ Audio is the category most often left entirely on defaults, and the defaults are
 
 | Role | Load Type | Compression | Notes |
 |---|---|---|---|
-| Short SFX (< 1s) | Decompress On Load | ADPCM or PCM | Instant playback, small enough to afford |
+| Short SFX (< 1s) | Decompress On Load | ADPCM | Instant playback; ~3.5× smaller than PCM and cheap to decode |
 | Medium (1–10s) | Compressed In Memory | Vorbis | Decoded on the fly, modest CPU |
 | Music / ambience (> 10s) | **Streaming** | Vorbis | ⚠️ Never load a 3-minute track into memory |
 | UI feedback | Decompress On Load | ADPCM | Latency matters more than size |
@@ -183,25 +239,71 @@ Audio is the category most often left entirely on defaults, and the defaults are
   Streaming it's a small buffer.
 - ✅ **Force To Mono** for anything played as a 3D positional source. Stereo data is wasted — spatial
   panning is computed from the listener anyway — and it halves the size.
-- ✅ Override the **sample rate**. Most SFX are indistinguishable at 22 kHz.
+- ✅ Override the **sample rate**. Most SFX are indistinguishable at 22 kHz. Only ever override *down* — a rate
+  above the source adds size, not quality.
+- ⚠️ Avoid **PCM** (uncompressed). Use it only for a very short clip where ADPCM's artefacts are audible.
+- ✅ Import uncompressed source audio (WAV). Importing an MP3 or OGG makes Unity decode and re-compress it, losing
+  quality twice.
 - ✅ Limit concurrent voices in the Audio settings; each active voice costs CPU.
-- ℹ️ For mixer and DSP configuration, see the `optimize-audio` skill.
+- ℹ️ For mixers, AudioSource pooling and spatial audio, see [UnityAudioInstructions.md](UnityAudioInstructions.md).
 
 ---
 
-## Presets: enforce settings automatically
+## Enforcing import settings
 
 Import settings only help if they're actually applied. Relying on people to remember is how a 4K
 Read/Write-enabled texture ends up in the build.
 
-- ✅ Configure one asset correctly, then **Preset icon → Save Current To…** into `Assets/Settings/Presets/`.
-- ✅ Wire it up in **Project Settings → Preset Manager** with a filter, so every new import in a folder
-  gets the right settings automatically.
-- ✅ Have a preset per role, not per type: `UISprite`, `AlbedoTexture`, `NormalMap`, `SFXAudio`,
-  `MusicAudio`.
-- ✅ Commit presets to version control. They are project configuration, not personal preference.
+- ✅ **Baseline: a scripted `AssetPostprocessor`** (`OnPreprocessTexture`, `OnPreprocessAudio`, `OnPreprocessModel`).
+  It runs on every import *and* reimport, so a setting changed by hand is corrected on the next reimport; it can
+  encode any rule (folder, texture type, platform) as code; and it goes through code review like the rest of the
+  project.
+- ⚠️ It is shared infrastructure: a bug mis-sets every asset it touches at once. Test it before merging.
+- ✅ Keep exceptions narrow and explicit — a dedicated folder (e.g. `Assets/Art/Textures/HandTuned/`) or an exemption
+  list the script checks — not a filename suffix, in line with the folder-based asset naming rule.
+- ✅ Bump the postprocessor's `GetVersion()` when a rule changes, so Unity reimports the assets it already processed.
+- ✅ The script lives in an Editor-only assembly or `Editor/` folder.
+
+```csharp
+// Editor/TextureImportRules.cs - runs on every texture import and reimport
+public class TextureImportRules : AssetPostprocessor
+{
+    // Escape hatch: textures in this folder keep their hand-tuned settings
+    private const string HandTunedFolder = "Assets/Art/Textures/HandTuned/";
+
+    // Bump when the rules below change, so existing textures reimport
+    public override uint GetVersion() => 1;
+
+    private void OnPreprocessTexture()
+    {
+        if (assetPath.StartsWith(HandTunedFolder)) return;
+
+        var importer = (TextureImporter)assetImporter;
+        importer.isReadable = false;                    // No CPU-side copy
+
+        if (importer.textureType == TextureImporterType.Sprite)
+        {
+            importer.mipmapEnabled = false;             // UI and 2D sprites don't use mips
+        }
+
+        TextureImporterPlatformSettings android = importer.GetPlatformTextureSettings("Android");
+        android.overridden = true;
+        android.format = TextureImporterFormat.ASTC_6x6;
+        importer.SetPlatformTextureSettings(android);
+    }
+}
+```
+
+- ✅ **Presets** are the no-code starting point for a small team: configure one asset, **Preset icon → Save Current
+  To…** into `Assets/Settings/Presets/`, and add it in **Project Settings → Preset Manager** with a folder filter.
+  Have one per role (`UISprite`, `AlbedoTexture`, `NormalMap`, `SFXAudio`, `MusicAudio`) and commit them.
+- ⚠️ A default Preset applies when an asset is first imported, **not on Reimport** — an asset that has since
+  drifted keeps its settings until someone uses **Reset** on it. Its filter matches file names, folders and
+  extensions (glob patterns included), but it can't express conditional rules such as "sprites get no mips" or
+  per-platform overrides by type. Move to a script once either limit bites.
 - ℹ️ See [UnityProjectConfiguration.md](../UnityCustomInstructions/UnityProjectConfiguration.md) for a
-  worked preset layout.
+  worked preset layout, and [UnityEditorToolingInstructions.md](UnityEditorToolingInstructions.md) for Editor
+  scripting conventions.
 
 ---
 
@@ -304,7 +406,16 @@ release. Loads are reference-counted.
 
 **The same texture appears twice in a memory snapshot.**
 Bundle duplication: two Addressable groups each reference it and it isn't marked Addressable itself.
-Run **Analyze → Check Duplicate Bundle Dependencies**.
+Run **Analyze → Check Duplicate Bundle Dependencies** and move it to a Shared group. With raw AssetBundles, also
+check for an asset loaded again after its bundle was reloaded following `Unload(false)`.
+
+**Mesh memory didn't drop after enabling Mesh Compression.**
+Expected — Mesh Compression only shrinks the file; meshes are decompressed on load. For runtime memory, use
+Vertex Compression and Optimize Mesh Data.
+
+**A texture's import settings keep reverting, or new textures import wrong.**
+A scripted `AssetPostprocessor` is overriding the manual change (move the texture to the exemption folder), or no
+rule covers that folder yet.
 
 **Build is far larger than the sum of the assets.**
 Usually a `Resources/` folder (everything in it ships whether referenced or not), or shader variant
@@ -324,12 +435,15 @@ Managed stripping removed a type only reached by reflection. Add it to `link.xml
 | Read/Write Enabled | Any texture or mesh with it on that isn't read from script |
 | Texture Max Size | 2048+ on assets that render small |
 | Mip maps | Enabled on UI sprites |
-| Audio load type | Music not set to Streaming; 3D sources not Forced To Mono |
+| Audio load type | Music not set to Streaming; 3D sources not Forced To Mono; PCM on ordinary SFX |
 | Addressables | `LoadAssetAsync` with no matching `Release`; `Destroy` on an instantiated addressable |
-| Duplicate bundles | Analyze rule not run |
+| Duplicate bundles | Analyze rule not run; an asset used by several groups with no Shared group |
+| Bundle count | Many small groups loaded at once, well past ~150 bundles |
 | `Resources/` | Any use at all in a shipping project |
 | Stripping | Managed Stripping Level at `Disabled` |
-| Presets | New assets importing on defaults because no Preset Manager filter exists |
+| Import enforcement | New or reimported assets landing on defaults because no `AssetPostprocessor` rule (or Preset) covers them |
+| Mesh | Mesh Compression used to save runtime memory (it doesn't) |
+| `StreamingAssets/` | Files nobody references any more |
 | Leaks | Static collections that grow and are never cleared |
 
 ---
