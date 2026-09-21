@@ -94,7 +94,7 @@ row, and keep the `FindObjectsSortMode.None` form on 6000.0–6000.5.
 
 ## If you read nothing else
 
-1. `m_` private fields, `k_` private constants, `s_` statics — camelCase after the prefix. `[opinion]`
+1. `_camelCase` for private fields and mutable statics; PascalCase for constants and `static readonly` values. `[opinion]`
 2. PascalCase for types, methods, properties, enums, tags, layers, and animator parameters.
 3. Booleans read as predicates: `isDead`, `hasKey`, `CanJump`.
 4. Fields are private. Expose with `[SerializeField]` for the Inspector, properties for other classes.
@@ -111,22 +111,22 @@ row, and keep the `FindObjectsSortMode.None` form on 6000.0–6000.5.
 
 | Element | Convention | Example |
 |---|---|---|
-| Private field | `m_` + camelCase `[opinion]` | `m_currentHealth` |
-| Private constant | `k_` + camelCase `[opinion]` | `k_maxRetries` |
-| Static field | `s_` + camelCase `[opinion]` | `s_instance` |
-| `public const` on a static lookup class | PascalCase, no prefix | `Tags.Player` |
+| Private field | `_` + camelCase `[opinion]` | `_currentHealth` |
+| Mutable static field | `_` + camelCase `[opinion]` | `_instance` |
+| Constant (`const`, any accessibility) | PascalCase | `MaxRetries`, `Tags.Player` |
+| `static readonly` value | PascalCase | `SpeedHash`, `UpdateMarker` |
 | Property | PascalCase | `CurrentHealth` |
 | Method | PascalCase verb | `ApplyDamage` |
 | Interface | `I` + PascalCase | `IDamageable` |
 | Enum type / values | PascalCase, singular noun | `Direction.North` |
 | Class / file / folder | PascalCase | `PlayerController.cs` |
-| ScriptableObject | PascalCase + `DataSO` `[opinion]` | `WeaponDataSO` |
+| ScriptableObject | PascalCase + `Config` `[opinion]` | `WeaponConfig` |
 | Async method | PascalCase + `Async` | `LoadLevelAsync` |
 | Coroutine | PascalCase + `Co` `[opinion]` | `FadeOutCo` |
 | Animator param / tag / layer | PascalCase | `IsRunning` |
 
-- Include units when a number is ambiguous: `m_speedInMetersPerSecond`, `m_delayInSeconds`.
-- Don't repeat the class name in a member: in `Player`, use `m_health` not `m_playerHealth`.
+- Include units when a number is ambiguous: `_speedInMetersPerSecond`, `_delayInSeconds`.
+- Don't repeat the class name in a member: in `Player`, use `_health` not `_playerHealth`.
 - No abbreviations unless universally known (`UI`, `ID`).
 - Boolean methods pose a question: `IsPlayerAlive()`, `HasLineOfSight()`.
 - Method verbs: `Set*` assigns, `Change*` transforms, `Handle*` responds to an event,
@@ -180,8 +180,8 @@ One MonoBehaviour per file, named after the file.
 ## Fields, properties and serialization
 
 ```csharp
-[SerializeField] private int m_maxHealth = 100;      // Inspector-visible, still private
-public int MaxHealth => m_maxHealth;                 // Read-only access for others
+[SerializeField] private int _maxHealth = 100;       // Inspector-visible, still private
+public int MaxHealth => _maxHealth;                  // Read-only access for others
 
 [field: SerializeField] public float MoveSpeed { get; private set; } = 5f;  // Concise alternative
 ```
@@ -198,8 +198,8 @@ public event Action<int> HealthChanged;
 
 protected virtual void OnHealthChanged(int value) => HealthChanged?.Invoke(value);
 
-private void OnEnable()  => m_health.HealthChanged += HandleHealthChanged;
-private void OnDisable() => m_health.HealthChanged -= HandleHealthChanged;
+private void OnEnable()  => _health.HealthChanged += HandleHealthChanged;
+private void OnDisable() => _health.HealthChanged -= HandleHealthChanged;
 ```
 
 - `event Action` / `Action<T>` for code; `UnityEvent` only when the Inspector needs to wire it.
@@ -240,7 +240,7 @@ private async Awaitable OpenAsync(CancellationToken token)
 {
     await Awaitable.WaitForSecondsAsync(2f, token);
     if (this == null || !isActiveAndEnabled) return;   // May have been destroyed while waiting
-    m_isOpen = true;
+    _isOpen = true;
 }
 ```
 
@@ -249,7 +249,7 @@ private async Awaitable OpenAsync(CancellationToken token)
 - For static configuration and shared content. **Not** for runtime state — Editor edits persist
   between play sessions.
 - Always `[CreateAssetMenu]`. Expose data through properties, not public fields.
-- Suffix with `DataSO`. `[opinion]`
+- Suffix with `Config`. `[opinion]`
 
 ## Strings and collections
 
@@ -285,7 +285,7 @@ Every class with statics needs a reset:
 [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
 private static void ResetStatics()
 {
-    s_score = 0;
+    _score = 0;
     ScoreChanged = null;   // Static events keep their subscribers otherwise
 }
 ```

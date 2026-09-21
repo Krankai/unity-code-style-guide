@@ -54,37 +54,37 @@ one object.
 [RequireComponent(typeof(Rigidbody))]
 public class Mover : MonoBehaviour
 {
-    [SerializeField] private float m_thrust = 10f;
-    [SerializeField] private float m_jumpImpulse = 5f;
+    [SerializeField] private float _thrust = 10f;
+    [SerializeField] private float _jumpImpulse = 5f;
 
-    private Rigidbody m_rigidbody;
-    private Vector3 m_moveInput;
-    private bool m_jumpQueued;
+    private Rigidbody _rigidbody;
+    private Vector3 _moveInput;
+    private bool _jumpQueued;
 
     private void Awake()
     {
-        m_rigidbody = GetComponent<Rigidbody>();
+        _rigidbody = GetComponent<Rigidbody>();
     }
 
     private void Update()
     {
         // Read input here — Update runs once per frame, FixedUpdate may not run at all.
-        m_moveInput = ReadMoveInput();
+        _moveInput = ReadMoveInput();
 
         if (WasJumpPressed())
         {
-            m_jumpQueued = true;
+            _jumpQueued = true;
         }
     }
 
     private void FixedUpdate()
     {
-        m_rigidbody.AddForce(m_moveInput * m_thrust, ForceMode.Force);
+        _rigidbody.AddForce(_moveInput * _thrust, ForceMode.Force);
 
-        if (m_jumpQueued)
+        if (_jumpQueued)
         {
-            m_rigidbody.AddForce(Vector3.up * m_jumpImpulse, ForceMode.Impulse);
-            m_jumpQueued = false;
+            _rigidbody.AddForce(Vector3.up * _jumpImpulse, ForceMode.Impulse);
+            _jumpQueued = false;
         }
     }
 }
@@ -191,7 +191,7 @@ private void OnTriggerEnter(Collider other)
     // TryGetComponent avoids the null-check-after-GetComponent dance.
     if (other.TryGetComponent(out Health health))
     {
-        health.ApplyDamage(m_damage);
+        health.ApplyDamage(_damage);
     }
 }
 ```

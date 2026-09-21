@@ -107,14 +107,14 @@ Four ways to declare the same reference, and what each does in the Inspector:
 
 | Declaration | Serialized | In Inspector | Verdict |
 |---|---|---|---|
-| `[SerializeField] private GameObject m_target;` | ✅ | ✅ visible | ✅ Correct |
-| `private GameObject m_target;` | ❌ | ❌ absent | The field is null at runtime and you can't assign it |
+| `[SerializeField] private GameObject _target;` | ✅ | ✅ visible | ✅ Correct |
+| `private GameObject _target;` | ❌ | ❌ absent | The field is null at runtime and you can't assign it |
 | `public GameObject Target;` | ✅ | ✅ visible | Works, but breaks encapsulation — avoid |
 | `[HideInInspector] public GameObject Target;` | ✅ | ❌ hidden | Deliberate: persisted but not designer-editable |
 
 ```csharp
 // ✅ The one you want
-[SerializeField] private GameObject m_target;
+[SerializeField] private GameObject _target;
 ```
 
 ⚠️ A field that "won't show up in the Inspector" is almost always the second row — the
@@ -126,12 +126,12 @@ Four ways to declare the same reference, and what each does in the Inspector:
 // Debug serialized values at runtime
 private void OnValidate()
 {
-    Debug.Log($"[Editor] m_target assigned: {m_target != null}");
+    Debug.Log($"[Editor] _target assigned: {_target != null}");
 }
 
 private void Awake()
 {
-    Debug.Log($"[Runtime] m_target assigned: {m_target != null}");
+    Debug.Log($"[Runtime] _target assigned: {_target != null}");
 }
 ```
 
@@ -216,16 +216,16 @@ public class UIManager : MonoBehaviour { }
 // Pattern: Validate all SerializeFields in Awake/Start
 private void Awake()
 {
-    Debug.Assert(m_playerTransform != null, "PlayerTransform not assigned!", this);
-    Debug.Assert(m_healthBar != null, "HealthBar not assigned!", this);
-    Debug.Assert(m_audioSource != null, "AudioSource not assigned!", this);
+    Debug.Assert(_playerTransform != null, "PlayerTransform not assigned!", this);
+    Debug.Assert(_healthBar != null, "HealthBar not assigned!", this);
+    Debug.Assert(_audioSource != null, "AudioSource not assigned!", this);
 }
 
 // Pattern: Null-conditional for optional references
-m_optionalComponent?.DoSomething();
+_optionalComponent?.DoSomething();
 
 // Pattern: Explicit null check with error
-if (m_requiredComponent == null)
+if (_requiredComponent == null)
 {
     Debug.LogError($"Required component missing on {gameObject.name}", this);
     enabled = false;
@@ -254,22 +254,22 @@ public class PhysicsController : MonoBehaviour { }
 
 ```csharp
 // Issue: Accessing destroyed object
-private GameObject m_enemy;
+private GameObject _enemy;
 
 private void Update()
 {
     // This throws MissingReferenceException after enemy is destroyed
-    float dist = Vector3.Distance(transform.position, m_enemy.transform.position);
+    float dist = Vector3.Distance(transform.position, _enemy.transform.position);
 }
 
 // Fix: Unity's fake null check
-if (m_enemy != null)  // Works for destroyed objects
+if (_enemy != null)   // Works for destroyed objects
 {
-    float dist = Vector3.Distance(transform.position, m_enemy.transform.position);
+    float dist = Vector3.Distance(transform.position, _enemy.transform.position);
 }
 
 // Note: C# null check doesn't catch destroyed objects
-if (m_enemy is not null)  // WRONG - doesn't detect destroyed Unity objects
+if (_enemy is not null)   // WRONG - doesn't detect destroyed Unity objects
 ```
 
 ---
@@ -355,7 +355,7 @@ private void DebugAction(InputAction action)
 // Debug: Read action value directly
 private void Update()
 {
-    var moveAction = m_inputActions.Player.Move;
+    var moveAction = _inputActions.Player.Move;
     Vector2 value = moveAction.ReadValue<Vector2>();
     Debug.Log($"Move: {value}, Phase: {moveAction.phase}");
 }
@@ -445,14 +445,14 @@ private void OnTriggerEnter2D(Collider2D other) { }
 // Debug: Log current animator state
 private void Update()
 {
-    var stateInfo = m_animator.GetCurrentAnimatorStateInfo(0);
+    var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
     Debug.Log($"State: {stateInfo.shortNameHash}, NormalizedTime: {stateInfo.normalizedTime}");
 }
 
 // Debug: Check if specific state is playing
 private bool IsPlaying(string stateName)
 {
-    var stateInfo = m_animator.GetCurrentAnimatorStateInfo(0);
+    var stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
     return stateInfo.IsName(stateName);
 }
 
@@ -460,9 +460,9 @@ private bool IsPlaying(string stateName)
 // Check: Are transition conditions met?
 private void DebugTransitionConditions()
 {
-    Debug.Log($"IsGrounded: {m_animator.GetBool("IsGrounded")}");
-    Debug.Log($"Speed: {m_animator.GetFloat("Speed")}");
-    Debug.Log($"IsInTransition: {m_animator.IsInTransition(0)}");
+    Debug.Log($"IsGrounded: {_animator.GetBool("IsGrounded")}");
+    Debug.Log($"Speed: {_animator.GetFloat("Speed")}");
+    Debug.Log($"IsInTransition: {_animator.IsInTransition(0)}");
 }
 ```
 
@@ -476,13 +476,13 @@ private void DebugTransitionConditions()
 // Debug: List all parameters
 private void LogAnimatorParameters()
 {
-    foreach (var param in m_animator.parameters)
+    foreach (var param in _animator.parameters)
     {
         string value = param.type switch
         {
-            AnimatorControllerParameterType.Bool => m_animator.GetBool(param.name).ToString(),
-            AnimatorControllerParameterType.Float => m_animator.GetFloat(param.name).ToString(),
-            AnimatorControllerParameterType.Int => m_animator.GetInteger(param.name).ToString(),
+            AnimatorControllerParameterType.Bool => _animator.GetBool(param.name).ToString(),
+            AnimatorControllerParameterType.Float => _animator.GetFloat(param.name).ToString(),
+            AnimatorControllerParameterType.Int => _animator.GetInteger(param.name).ToString(),
             AnimatorControllerParameterType.Trigger => "(trigger)",
             _ => "unknown"
         };
@@ -491,12 +491,12 @@ private void LogAnimatorParameters()
 }
 
 // Best practice: Cache parameter hashes
-private static readonly int s_speedHash = Animator.StringToHash("Speed");
-private static readonly int s_jumpHash = Animator.StringToHash("Jump");
+private static readonly int SpeedHash = Animator.StringToHash("Speed");
+private static readonly int JumpHash = Animator.StringToHash("Jump");
 
 private void SetSpeed(float speed)
 {
-    m_animator.SetFloat(s_speedHash, speed);
+    _animator.SetFloat(SpeedHash, speed);
 }
 ```
 
@@ -535,8 +535,8 @@ public void OnFootstep(AnimationEvent evt)
 private void OnAnimatorMove()
 {
     // Custom root motion handling
-    Vector3 position = m_animator.rootPosition;
-    Quaternion rotation = m_animator.rootRotation;
+    Vector3 position = _animator.rootPosition;
+    Quaternion rotation = _animator.rootRotation;
 
     // Apply with modifications
     transform.position = position;
@@ -603,7 +603,7 @@ private void OnEnable()
     var pane = root.Q("stats-pane");
 
     // Swap from mock asset to runtime data
-    pane.dataSource = m_playerStats.runtimeData;
+    pane.dataSource = _playerStats.runtimeData;
 }
 ```
 
@@ -642,11 +642,11 @@ private void DebugAudioSource(AudioSource source)
 ```csharp
 // Issue: 3D sound not working
 // Check: Spatial Blend setting (0 = 2D, 1 = 3D)
-m_audioSource.spatialBlend = 1f;  // Fully 3D
+_audioSource.spatialBlend = 1f;   // Fully 3D
 
 // Check: Distance settings
-Debug.Log($"Min Distance: {m_audioSource.minDistance}");
-Debug.Log($"Max Distance: {m_audioSource.maxDistance}");
+Debug.Log($"Min Distance: {_audioSource.minDistance}");
+Debug.Log($"Max Distance: {_audioSource.maxDistance}");
 
 // Debug: Distance to listener
 var listener = FindAnyObjectByType<AudioListener>();
@@ -665,7 +665,7 @@ if (listener != null)
 
 // Debug: Get current mixer values
 float value;
-if (m_mixer.GetFloat("MasterVolume", out value))
+if (_mixer.GetFloat("MasterVolume", out value))
 {
     Debug.Log($"MasterVolume: {value} dB");
 }
@@ -722,13 +722,13 @@ private IEnumerator MyCoroutine()
 
 // Issue: Multiple coroutines running
 // Fix: Store and stop reference
-private Coroutine m_currentCoroutine;
+private Coroutine _currentCoroutine;
 
 public void StartMyCoroutine()
 {
-    if (m_currentCoroutine != null)
-        StopCoroutine(m_currentCoroutine);
-    m_currentCoroutine = StartCoroutine(MyCoroutine());
+    if (_currentCoroutine != null)
+        StopCoroutine(_currentCoroutine);
+    _currentCoroutine = StartCoroutine(MyCoroutine());
 }
 ```
 
@@ -786,15 +786,15 @@ private async Awaitable WaitForPhysics()
 }
 
 // Custom cancellation
-private CancellationTokenSource m_cts;
+private CancellationTokenSource _cts;
 
 private async Awaitable DoWithCustomCancellation()
 {
-    m_cts = new CancellationTokenSource();
+    _cts = new CancellationTokenSource();
 
     try
     {
-        await Awaitable.WaitForSecondsAsync(5f, m_cts.Token);
+        await Awaitable.WaitForSecondsAsync(5f, _cts.Token);
         Debug.Log("Completed");
     }
     catch (OperationCanceledException)
@@ -803,7 +803,7 @@ private async Awaitable DoWithCustomCancellation()
     }
 }
 
-public void Cancel() => m_cts?.Cancel();
+public void Cancel() => _cts?.Cancel();
 ```
 
 ### Awaitable vs Coroutine Comparison
@@ -825,19 +825,19 @@ public void Cancel() => m_cts?.Cancel();
 ```csharp
 // Issue: UnityEvent not firing
 // Debug: Check listener count
-Debug.Log($"Listener count: {m_onPlayerDeath.GetPersistentEventCount()}");
+Debug.Log($"Listener count: {_onPlayerDeath.GetPersistentEventCount()}");
 
 // Check: Are listeners assigned in Inspector?
 // Check: Is the target object not destroyed?
 // Check: Is the method signature correct?
 
 // Debug: Log when event fires
-[SerializeField] private UnityEvent m_onPlayerDeath;
+[SerializeField] private UnityEvent _onPlayerDeath;
 
 public void Die()
 {
-    Debug.Log($"Invoking OnPlayerDeath with {m_onPlayerDeath.GetPersistentEventCount()} listeners");
-    m_onPlayerDeath?.Invoke();
+    Debug.Log($"Invoking OnPlayerDeath with {_onPlayerDeath.GetPersistentEventCount()} listeners");
+    _onPlayerDeath?.Invoke();
 }
 ```
 
@@ -868,19 +868,19 @@ private void OnDisable()
 // Debug: Track subscriptions
 public static class GameManager
 {
-    private static event Action m_onGameOver;
+    private static event Action _onGameOver;
 
     public static event Action OnGameOver
     {
         add
         {
             Debug.Log($"Subscriber added: {value.Target?.GetType().Name}.{value.Method.Name}");
-            m_onGameOver += value;
+            _onGameOver += value;
         }
         remove
         {
             Debug.Log($"Subscriber removed: {value.Target?.GetType().Name}.{value.Method.Name}");
-            m_onGameOver -= value;
+            _onGameOver -= value;
         }
     }
 }
@@ -896,7 +896,7 @@ public event Action<int> OnScoreChanged;
 
 private void AddScore(int points)
 {
-    m_score += points;
+    _score += points;
 
     // Log each subscriber as it's called
     if (OnScoreChanged != null)
@@ -905,7 +905,7 @@ private void AddScore(int points)
         foreach (var handler in OnScoreChanged.GetInvocationList())
         {
             Debug.Log($"Calling handler {index++}: {handler.Target?.GetType().Name}.{handler.Method.Name}");
-            ((Action<int>)handler).Invoke(m_score);
+            ((Action<int>)handler).Invoke(_score);
         }
     }
 }
@@ -928,32 +928,32 @@ private void AddScore(int points)
 
 ```csharp
 // Issue: Runtime changes persist in Editor
-[SerializeField] private PlayerDataSO m_playerData;
+[SerializeField] private PlayerConfig _playerData;
 
 private void TakeDamage(int damage)
 {
-    m_playerData.health -= damage;  // Modifies the ASSET in Editor!
+    _playerData.health -= damage;   // Modifies the ASSET in Editor!
 }
 
 // Fix: Create runtime instance
-private PlayerDataSO m_runtimeData;
+private PlayerConfig _runtimeData;
 
 private void Awake()
 {
     // Create a copy for runtime modifications
-    m_runtimeData = Instantiate(m_playerData);
+    _runtimeData = Instantiate(_playerData);
 }
 
 private void TakeDamage(int damage)
 {
-    m_runtimeData.health -= damage;  // Safe - modifies instance only
+    _runtimeData.health -= damage;   // Safe - modifies instance only
 }
 
 private void OnDestroy()
 {
     // Clean up runtime instance
-    if (m_runtimeData != null)
-        Destroy(m_runtimeData);
+    if (_runtimeData != null)
+        Destroy(_runtimeData);
 }
 ```
 
@@ -963,24 +963,24 @@ private void OnDestroy()
 // Pattern: Create SO at runtime for data binding
 public class RuntimeDataProvider : MonoBehaviour
 {
-    [SerializeField] private PlayerDataSO m_template;
+    [SerializeField] private PlayerConfig _template;
 
-    private PlayerDataSO m_runtimeData;
+    private PlayerConfig _runtimeData;
 
-    public PlayerDataSO RuntimeData
+    public PlayerConfig RuntimeData
     {
         get
         {
-            if (m_runtimeData == null)
+            if (_runtimeData == null)
             {
-                m_runtimeData = ScriptableObject.CreateInstance<PlayerDataSO>();
-                m_runtimeData.hideFlags = HideFlags.HideAndDontSave;
+                _runtimeData = ScriptableObject.CreateInstance<PlayerConfig>();
+                _runtimeData.hideFlags = HideFlags.HideAndDontSave;
 
                 // Copy initial values from template
-                m_runtimeData.health = m_template.health;
-                m_runtimeData.maxHealth = m_template.maxHealth;
+                _runtimeData.health = _template.health;
+                _runtimeData.maxHealth = _template.maxHealth;
             }
-            return m_runtimeData;
+            return _runtimeData;
         }
     }
 }
@@ -1002,7 +1002,7 @@ public void ModifyHealth(int delta, string source)
 // Fix if unintentional: Each object needs its own instance
 private void Awake()
 {
-    m_playerData = Instantiate(m_playerData);
+    _playerData = Instantiate(_playerData);
 }
 ```
 
@@ -1106,11 +1106,11 @@ Vector3 GetWorldScaleIndependent()
 ```csharp
 using Unity.Profiling;
 
-private static readonly ProfilerMarker s_updateMarker = new ProfilerMarker("MyScript.Update");
+private static readonly ProfilerMarker UpdateMarker = new ProfilerMarker("MyScript.Update");
 
 private void Update()
 {
-    using (s_updateMarker.Auto())
+    using (UpdateMarker.Auto())
     {
         // Code to profile
     }
@@ -1137,13 +1137,13 @@ private void Update()
 }
 
 // GOOD: Keep a registry, reuse the builder
-private readonly List<Enemy> m_activeEnemies = new(100);  // Enemies add/remove themselves
-private readonly StringBuilder m_statusBuilder = new(64);
+private readonly List<Enemy> _activeEnemies = new(100);   // Enemies add/remove themselves
+private readonly StringBuilder _statusBuilder = new(64);
 
 private void Update()
 {
-    m_statusBuilder.Clear();
-    m_statusBuilder.Append("Count: ").Append(m_activeEnemies.Count);  // No allocation
+    _statusBuilder.Clear();
+    _statusBuilder.Append("Count: ").Append(_activeEnemies.Count);    // No allocation
 }
 ```
 
@@ -1262,9 +1262,9 @@ The AI reads relevant files, traces execution flow, and identifies suspects.
 private void Update()
 {
     // Diagnostic logging added by AI
-    Debug.Log($"[DEBUG] m_inputHandler: {m_inputHandler != null}", this);
-    Debug.Log($"[DEBUG] m_characterController: {m_characterController != null}", this);
-    Debug.Log($"[DEBUG] m_isGrounded: {m_isGrounded}", this);
+    Debug.Log($"[DEBUG] _inputHandler: {_inputHandler != null}", this);
+    Debug.Log($"[DEBUG] _characterController: {_characterController != null}", this);
+    Debug.Log($"[DEBUG] _isGrounded: {_isGrounded}", this);
 
     HandleMovement();
     HandleJump();  // Line 47 - exception occurs here
@@ -1285,16 +1285,16 @@ When you need the debugger to pause at a specific condition:
 private void Update()
 {
     // Pause debugger when unexpected state occurs
-    if (m_health < 0)
+    if (_health < 0)
     {
         Debug.LogError("Health went negative - breaking to debugger");
         System.Diagnostics.Debugger.Break();  // Rider/VS will pause here
     }
 
     // Conditional break with context logging
-    if (m_player == null && m_wasPlayerValid)
+    if (_player == null && _wasPlayerValid)
     {
-        Debug.LogError($"Player reference lost! Last valid frame: {m_lastValidFrame}");
+        Debug.LogError($"Player reference lost! Last valid frame: {_lastValidFrame}");
         System.Diagnostics.Debugger.Break();
     }
 }
@@ -1321,10 +1321,10 @@ private void LogStateSnapshot()
 {
     Debug.Log("=== STATE SNAPSHOT ===");
     Debug.Log($"Position: {transform.position}");
-    Debug.Log($"Velocity: {m_rigidbody?.linearVelocity}");
-    Debug.Log($"IsGrounded: {m_isGrounded}");
-    Debug.Log($"CurrentState: {m_currentState}");
-    Debug.Log($"InputVector: {m_inputVector}");
+    Debug.Log($"Velocity: {_rigidbody?.linearVelocity}");
+    Debug.Log($"IsGrounded: {_isGrounded}");
+    Debug.Log($"CurrentState: {_currentState}");
+    Debug.Log($"InputVector: {_inputVector}");
     Debug.Log("======================");
 }
 ```
@@ -1338,7 +1338,7 @@ private void DebugLog(string message)
 }
 
 // Usage - automatically stripped from builds
-DebugLog($"Processing {m_items.Count} items");
+DebugLog($"Processing {_items.Count} items");
 ```
 
 ### Tips for Effective AI-Assisted Debugging

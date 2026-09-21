@@ -7,7 +7,7 @@
 
 **Target: Unity 6.3.4f1 exclusively.** All APIs here are Unity 6.3. Do not use or reference pre-Unity 6 alternatives.
 
-> For C# code style within UI controllers, follow the conventions in `CLAUDE.md` (`m_` prefix, PascalCase properties, Allman braces, etc.)
+> For C# code style within UI controllers, follow the conventions in `CLAUDE.md` (`_` prefix, PascalCase properties, Allman braces, etc.)
 
 Official documentation (fetch on demand if an API is not covered here):
 → https://docs.unity3d.com/6000.3/Documentation/Manual/UIElements.html
@@ -221,19 +221,19 @@ Pattern: `block-name__element-name--modifier-name`
 
 ```csharp
 // Centralize selectors as constants to avoid typos
-private const string k_navbarMenu = "navbar-menu";
-private const string k_shopButton = "navbar-menu__shop-button";
-private const string k_settingsButton = "navbar-menu__settings-button";
+private const string NavbarMenu = "navbar-menu";
+private const string ShopButton = "navbar-menu__shop-button";
+private const string SettingsButton = "navbar-menu__settings-button";
 
 // Usage
-var navbar = root.Q<VisualElement>(k_navbarMenu);
-var shopButton = root.Q<Button>(k_shopButton);
+var navbar = root.Q<VisualElement>(NavbarMenu);
+var shopButton = root.Q<Button>(ShopButton);
 ```
 
 ### Toggling Classes from C#
 
 ```csharp
-var btn = root.Q<Button>(k_shopButton);
+var btn = root.Q<Button>(ShopButton);
 
 // Add/remove modifiers
 btn.AddToClassList("button--primary");
@@ -879,8 +879,8 @@ Virtualized list for displaying large data sets efficiently. Populated via C# wi
 ```csharp
 var listView = root.Q<ListView>("inventory-list");
 listView.makeItem = () => new Label();
-listView.bindItem = (element, index) => ((Label)element).text = m_items[index].Name;
-listView.itemsSource = m_items;
+listView.bindItem = (element, index) => ((Label)element).text = _items[index].Name;
+listView.itemsSource = _items;
 
 // Refresh when data changes
 listView.RefreshItems();
@@ -904,7 +904,7 @@ treeView.bindItem = (element, index) =>
     var item = treeView.GetItemDataForIndex<FileItem>(index);
     ((Label)element).text = item.Name;
 };
-treeView.SetRootItems(m_rootItems);
+treeView.SetRootItems(_rootItems);
 ```
 
 #### MultiColumnListView
@@ -940,8 +940,8 @@ Table-like list with multiple sortable columns.
 var table = root.Q<MultiColumnListView>("data-table");
 table.columns["name-column"].makeCell = () => new Label();
 table.columns["name-column"].bindCell = (element, index) =>
-    ((Label)element).text = m_data[index].Name;
-table.itemsSource = m_data;
+    ((Label)element).text = _data[index].Name;
+table.itemsSource = _data;
 ```
 
 #### MultiColumnTreeView
@@ -1076,23 +1076,23 @@ using Unity.Properties;
 using UnityEngine;
 using UnityEngine.UIElements; // Required for INotifyBindablePropertyChanged and BindablePropertyChangedEventArgs
 
-[CreateAssetMenu(fileName = "PlayerData", menuName = "Game Data/Player")]
-public class PlayerDataSO : ScriptableObject, INotifyBindablePropertyChanged
+[CreateAssetMenu(fileName = "PlayerConfig", menuName = "Player/Player Config")]
+public class PlayerConfig : ScriptableObject, INotifyBindablePropertyChanged
 {
     public event EventHandler<BindablePropertyChangedEventArgs> propertyChanged;
 
-    [SerializeField] private int m_health = 100;
-    [SerializeField] private string m_playerName = "Player";
+    [SerializeField] private int _health = 100;
+    [SerializeField] private string _playerName = "Player";
 
     [CreateProperty]
     public int Health
     {
-        get => m_health;
+        get => _health;
         set
         {
-            if (m_health != value)
+            if (_health != value)
             {
-                m_health = value;
+                _health = value;
                 Notify(nameof(Health));
             }
         }
@@ -1101,12 +1101,12 @@ public class PlayerDataSO : ScriptableObject, INotifyBindablePropertyChanged
     [CreateProperty]
     public string PlayerName
     {
-        get => m_playerName;
+        get => _playerName;
         set
         {
-            if (m_playerName != value)
+            if (_playerName != value)
             {
-                m_playerName = value;
+                _playerName = value;
                 Notify(nameof(PlayerName));
             }
         }
@@ -1129,17 +1129,17 @@ For static or one-time binding, `INotifyBindablePropertyChanged` is not required
 using Unity.Properties;
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "ItemData", menuName = "Game Data/Item")]
-public class ItemDataSO : ScriptableObject
+[CreateAssetMenu(fileName = "ItemConfig", menuName = "Inventory/Item Config")]
+public class ItemConfig : ScriptableObject
 {
-    [SerializeField] private string m_itemName;
-    [SerializeField] private int m_cost;
+    [SerializeField] private string _itemName;
+    [SerializeField] private int _cost;
 
     [CreateProperty]
-    public string ItemName => m_itemName;
+    public string ItemName => _itemName;
 
     [CreateProperty]
-    public int Cost => m_cost;
+    public int Cost => _cost;
 }
 ```
 
@@ -1149,7 +1149,7 @@ This pattern works when data doesn't change at runtime, or when you manually rea
 
 ```xml
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
-    <ui:VisualElement data-source-type="PlayerDataSO, Assembly-CSharp" name="player-panel">
+    <ui:VisualElement data-source-type="PlayerConfig, Assembly-CSharp" name="player-panel">
         <ui:Label binding-path="PlayerName" name="name-label" />
         <ui:ProgressBar binding-path="Health" low-value="0" high-value="100" />
     </ui:VisualElement>
@@ -1163,16 +1163,16 @@ This pattern works when data doesn't change at runtime, or when you manually rea
 ```csharp
 public class UIController : MonoBehaviour
 {
-    [SerializeField] private UIDocument m_uiDocument;
-    [SerializeField] private PlayerDataSO m_playerData;
+    [SerializeField] private UIDocument _uiDocument;
+    [SerializeField] private PlayerConfig _playerData;
 
     private void OnEnable()
     {
-        var root = m_uiDocument.rootVisualElement;
+        var root = _uiDocument.rootVisualElement;
         var playerPanel = root.Q<VisualElement>("player-panel");
 
         // Assign data source — resolves all UXML binding-path declarations
-        playerPanel.dataSource = m_playerData;
+        playerPanel.dataSource = _playerData;
     }
 }
 ```
@@ -1190,7 +1190,7 @@ var label = root.Q<Label>("player-name");
 // One-way: data → UI
 label.SetBinding("text", new DataBinding
 {
-    dataSourcePath = new PropertyPath(nameof(PlayerDataSO.PlayerName)),
+    dataSourcePath = new PropertyPath(nameof(PlayerConfig.PlayerName)),
     bindingMode = BindingMode.ToTarget
 });
 
@@ -1198,7 +1198,7 @@ label.SetBinding("text", new DataBinding
 var slider = root.Q<Slider>("health-bar");
 slider.SetBinding("value", new DataBinding
 {
-    dataSourcePath = new PropertyPath(nameof(PlayerDataSO.Health)),
+    dataSourcePath = new PropertyPath(nameof(PlayerConfig.Health)),
     bindingMode = BindingMode.TwoWay
 });
 ```
@@ -1273,27 +1273,27 @@ public partial class HealthBar : VisualElement
     [UxmlAttribute]
     public string label { get; set; } = "HP";
 
-    private Label m_label;
-    private VisualElement m_fill;
+    private Label _label;
+    private VisualElement _fill;
 
     public HealthBar()
     {
         AddToClassList("health-bar");
 
-        m_label = new Label(label);
-        m_label.AddToClassList("health-bar__label");
+        _label = new Label(label);
+        _label.AddToClassList("health-bar__label");
 
-        m_fill = new VisualElement();
-        m_fill.AddToClassList("health-bar__fill");
+        _fill = new VisualElement();
+        _fill.AddToClassList("health-bar__fill");
 
-        Add(m_label);
-        Add(m_fill);
+        Add(_label);
+        Add(_fill);
     }
 
     public void SetValue(float current)
     {
         float pct = Mathf.Clamp01(current / maxHealth) * 100f;
-        m_fill.style.width = Length.Percent(pct);
+        _fill.style.width = Length.Percent(pct);
     }
 }
 ```
@@ -1351,24 +1351,24 @@ root.Q<Button>("optional-button")?.SetEnabled(false);
 
 ```csharp
 // ✅ Good — cached in OnEnable (preferred for UIDocument MonoBehaviours)
-private Button m_submitButton;
+private Button _submitButton;
 
 private void OnEnable()
 {
-    var root = m_uiDocument.rootVisualElement;
-    m_submitButton = root.Q<Button>("submit-button");
-    m_submitButton.clicked += OnSubmitClicked;
+    var root = _uiDocument.rootVisualElement;
+    _submitButton = root.Q<Button>("submit-button");
+    _submitButton.clicked += OnSubmitClicked;
 }
 
 private void OnDisable()
 {
-    m_submitButton.clicked -= OnSubmitClicked;
+    _submitButton.clicked -= OnSubmitClicked;
 }
 
 // ❌ Bad — queried every frame
 private void Update()
 {
-    m_uiDocument.rootVisualElement.Q<Button>("submit-button").SetEnabled(false);
+    _uiDocument.rootVisualElement.Q<Button>("submit-button").SetEnabled(false);
 }
 ```
 
@@ -1379,14 +1379,14 @@ private void Update()
 //    UIDocument is guaranteed to have its rootVisualElement populated here.
 private void OnEnable()
 {
-    var root = m_uiDocument.rootVisualElement;
-    m_button = root.Q<Button>("my-button");
-    m_button.clicked += OnButtonClicked;
+    var root = _uiDocument.rootVisualElement;
+    _button = root.Q<Button>("my-button");
+    _button.clicked += OnButtonClicked;
 }
 
 private void OnDisable()
 {
-    m_button.clicked -= OnButtonClicked;
+    _button.clicked -= OnButtonClicked;
 }
 
 /// ⚠️ Awake: querying rootVisualElement here works if UIDocument is on the
@@ -1395,7 +1395,7 @@ private void OnDisable()
 //    Prefer OnEnable so queries and event registration stay together.
 private void Awake()
 {
-    m_uiDocument = GetComponent<UIDocument>(); // Component lookup is fine in Awake
+    _uiDocument = GetComponent<UIDocument>(); // Component lookup is fine in Awake
 }
 
 // ✅ CreateGUI is the correct method for EditorWindows
@@ -1422,7 +1422,7 @@ element.style.display = DisplayStyle.Flex;
 // Helper method pattern
 public void SetPanelVisible(bool isVisible)
 {
-    m_panel.style.display = isVisible ? DisplayStyle.Flex : DisplayStyle.None;
+    _panel.style.display = isVisible ? DisplayStyle.Flex : DisplayStyle.None;
 }
 ```
 
@@ -1445,19 +1445,19 @@ element.style.visibility = Visibility.Visible;
 ### Button Click Events
 
 ```csharp
-private Button m_actionButton;
+private Button _actionButton;
 
 private void OnEnable()
 {
-    var root = m_uiDocument.rootVisualElement;
-    m_actionButton = root.Q<Button>("action-button");
-    m_actionButton.clicked += OnActionButtonClicked;
+    var root = _uiDocument.rootVisualElement;
+    _actionButton = root.Q<Button>("action-button");
+    _actionButton.clicked += OnActionButtonClicked;
 }
 
 private void OnDisable()
 {
     // Always unsubscribe to prevent memory leaks
-    m_actionButton.clicked -= OnActionButtonClicked;
+    _actionButton.clicked -= OnActionButtonClicked;
 }
 
 private void OnActionButtonClicked()
@@ -1522,18 +1522,18 @@ The project's `EventRegistry` utility (in `GameSystems` namespace) provides cent
 ```csharp
 using GameSystems;
 
-private readonly EventRegistry m_eventRegistry = new();
+private readonly EventRegistry _eventRegistry = new();
 
 private void OnEnable()
 {
-    m_eventRegistry.RegisterCallback<ClickEvent>(m_submitButton, OnSubmitClicked);
-    m_eventRegistry.RegisterCallback<ClickEvent>(m_cancelButton, OnCancelClicked);
-    m_eventRegistry.RegisterValueChangedCallback<float>(m_volumeSlider, OnVolumeChanged);
+    _eventRegistry.RegisterCallback<ClickEvent>(_submitButton, OnSubmitClicked);
+    _eventRegistry.RegisterCallback<ClickEvent>(_cancelButton, OnCancelClicked);
+    _eventRegistry.RegisterValueChangedCallback<float>(_volumeSlider, OnVolumeChanged);
 }
 
 private void OnDisable()
 {
-    m_eventRegistry.Dispose(); // Unregisters everything at once
+    _eventRegistry.Dispose(); // Unregisters everything at once
 }
 ```
 
@@ -1546,27 +1546,27 @@ private void OnDisable()
 ```csharp
 public class CardGridController : MonoBehaviour
 {
-    [SerializeField] private UIDocument m_uiDocument;
-    [SerializeField] private VisualTreeAsset m_cardTemplate;
-    [SerializeField] private List<CardDataSO> m_cards;
+    [SerializeField] private UIDocument _uiDocument;
+    [SerializeField] private VisualTreeAsset _cardTemplate;
+    [SerializeField] private List<CardConfig> _cards;
 
-    private VisualElement m_cardContainer;
+    private VisualElement _cardContainer;
 
     private void OnEnable()
     {
-        var root = m_uiDocument.rootVisualElement;
-        m_cardContainer = root.Q<VisualElement>("card-container");
+        var root = _uiDocument.rootVisualElement;
+        _cardContainer = root.Q<VisualElement>("card-container");
         PopulateCards();
     }
 
     private void PopulateCards()
     {
-        m_cardContainer.Clear();
+        _cardContainer.Clear();
 
-        foreach (var cardData in m_cards)
+        foreach (var cardData in _cards)
         {
             // Instantiate template
-            var cardElement = m_cardTemplate.Instantiate();
+            var cardElement = _cardTemplate.Instantiate();
 
             // Populate via queries or data binding
             cardElement.Q<Label>("card-title").text = cardData.Title;
@@ -1581,11 +1581,11 @@ public class CardGridController : MonoBehaviour
                 actionButton.clicked += () => OnCardActionClicked(data);
             }
 
-            m_cardContainer.Add(cardElement);
+            _cardContainer.Add(cardElement);
         }
     }
 
-    private void OnCardActionClicked(CardDataSO cardData)
+    private void OnCardActionClicked(CardConfig cardData)
     {
         Debug.Log($"Card clicked: {cardData.Title}");
     }
@@ -1597,21 +1597,21 @@ public class CardGridController : MonoBehaviour
 ```csharp
 private void SetupListView()
 {
-    m_listView.makeItem = () => m_itemTemplate.Instantiate();
+    _listView.makeItem = () => _itemTemplate.Instantiate();
 
-    m_listView.bindItem = (element, index) =>
+    _listView.bindItem = (element, index) =>
     {
-        var item = m_items[index];
+        var item = _items[index];
         element.Q<Label>("item-name").text = item.ItemName;
         element.Q<Label>("item-cost").text = $"{item.Cost} gold";
         element.dataSource = item;
     };
 
-    m_listView.itemsSource = m_items;
+    _listView.itemsSource = _items;
 }
 
 // Refresh when data changes
-public void RefreshList() => m_listView.RefreshItems();
+public void RefreshList() => _listView.RefreshItems();
 ```
 
 **ListView UXML:**
@@ -1671,17 +1671,17 @@ public void RefreshList() => m_listView.RefreshItems();
 ### C# Tab Events
 
 ```csharp
-private TabView m_tabView;
+private TabView _tabView;
 
 private void OnEnable()
 {
-    m_tabView = root.Q<TabView>("main-tabs");
-    m_tabView.activeTabChanged += OnActiveTabChanged;
+    _tabView = root.Q<TabView>("main-tabs");
+    _tabView.activeTabChanged += OnActiveTabChanged;
 }
 
 private void OnDisable()
 {
-    m_tabView.activeTabChanged -= OnActiveTabChanged;
+    _tabView.activeTabChanged -= OnActiveTabChanged;
 }
 
 private void OnActiveTabChanged(Tab previousTab, Tab newTab)
@@ -1757,7 +1757,7 @@ This section demonstrates a clean **Model-View-Presenter (MVP)** architecture us
 | View | `ArmyRecruitView.cs` | `Assets/UI Toolkit/Scripts/Army/` | Display recruitable units, handle recruitment UI |
 | Presenter/Controller | `BuildingsController.cs` | `Assets/Scripts/Map/` | Game logic, data manipulation, event orchestration |
 | Presenter/Controller | `DiplomacyController.cs` | `Assets/Scripts/Diplomacy/` | Manage relationships, treaties, AI decisions |
-| Model | `InventoryDataSO.cs` | `Assets/Scripts/Core/` | Pure data — no UI or logic |
+| Model | `InventoryConfig.cs` | `Assets/Scripts/Core/` | Pure data — no UI or logic |
 
 **Why this convention?**
 - ✅ Immediately communicates: "This class handles UI presentation"
@@ -1818,31 +1818,31 @@ namespace Game.Models
         public event EventHandler<BindablePropertyChangedEventArgs> propertyChanged;
 
         [Header("Stats Configuration")]
-        [SerializeField] private int m_maxHealth = 100;
-        [SerializeField] private int m_maxStamina = 100;
+        [SerializeField] private int _maxHealth = 100;
+        [SerializeField] private int _maxStamina = 100;
 
         [Header("Current Values")]
-        [SerializeField] private int m_currentHealth = 100;
-        [SerializeField] private int m_currentStamina = 100;
-        [SerializeField] private int m_gold = 0;
-        [SerializeField] private string m_playerName = "Hero";
+        [SerializeField] private int _currentHealth = 100;
+        [SerializeField] private int _currentStamina = 100;
+        [SerializeField] private int _gold = 0;
+        [SerializeField] private string _playerName = "Hero";
 
         [CreateProperty]
-        public int MaxHealth => m_maxHealth;
+        public int MaxHealth => _maxHealth;
 
         [CreateProperty]
-        public int MaxStamina => m_maxStamina;
+        public int MaxStamina => _maxStamina;
 
         [CreateProperty]
         public int CurrentHealth
         {
-            get => m_currentHealth;
+            get => _currentHealth;
             set
             {
-                int clampedValue = Mathf.Clamp(value, 0, m_maxHealth);
-                if (m_currentHealth != clampedValue)
+                int clampedValue = Mathf.Clamp(value, 0, _maxHealth);
+                if (_currentHealth != clampedValue)
                 {
-                    m_currentHealth = clampedValue;
+                    _currentHealth = clampedValue;
                     Notify(nameof(CurrentHealth));
                     Notify(nameof(HealthPercent)); // Notify derived property too
                 }
@@ -1852,13 +1852,13 @@ namespace Game.Models
         [CreateProperty]
         public int CurrentStamina
         {
-            get => m_currentStamina;
+            get => _currentStamina;
             set
             {
-                int clampedValue = Mathf.Clamp(value, 0, m_maxStamina);
-                if (m_currentStamina != clampedValue)
+                int clampedValue = Mathf.Clamp(value, 0, _maxStamina);
+                if (_currentStamina != clampedValue)
                 {
-                    m_currentStamina = clampedValue;
+                    _currentStamina = clampedValue;
                     Notify(nameof(CurrentStamina));
                     Notify(nameof(StaminaPercent));
                 }
@@ -1868,12 +1868,12 @@ namespace Game.Models
         [CreateProperty]
         public int Gold
         {
-            get => m_gold;
+            get => _gold;
             set
             {
-                if (m_gold != value)
+                if (_gold != value)
                 {
-                    m_gold = Mathf.Max(0, value);
+                    _gold = Mathf.Max(0, value);
                     Notify(nameof(Gold));
                 }
             }
@@ -1882,12 +1882,12 @@ namespace Game.Models
         [CreateProperty]
         public string PlayerName
         {
-            get => m_playerName;
+            get => _playerName;
             set
             {
-                if (m_playerName != value)
+                if (_playerName != value)
                 {
-                    m_playerName = value;
+                    _playerName = value;
                     Notify(nameof(PlayerName));
                 }
             }
@@ -1895,10 +1895,10 @@ namespace Game.Models
 
         // Derived properties for progress bars (0-100 range)
         [CreateProperty]
-        public float HealthPercent => m_maxHealth > 0 ? (float)m_currentHealth / m_maxHealth * 100f : 0f;
+        public float HealthPercent => _maxHealth > 0 ? (float)_currentHealth / _maxHealth * 100f : 0f;
 
         [CreateProperty]
-        public float StaminaPercent => m_maxStamina > 0 ? (float)m_currentStamina / m_maxStamina * 100f : 0f;
+        public float StaminaPercent => _maxStamina > 0 ? (float)_currentStamina / _maxStamina * 100f : 0f;
 
         private void Notify(string propertyName)
         {
@@ -1907,8 +1907,8 @@ namespace Game.Models
 
         public void ResetStats()
         {
-            CurrentHealth = m_maxHealth;
-            CurrentStamina = m_maxStamina;
+            CurrentHealth = _maxHealth;
+            CurrentStamina = _maxStamina;
         }
     }
 }
@@ -1931,62 +1931,62 @@ namespace Game.Views
     public class PlayerStatsView : MonoBehaviour
     {
         [Header("Data Source")]
-        [SerializeField] private PlayerStatsModel m_playerStats;
+        [SerializeField] private PlayerStatsModel _playerStats;
 
         [Header("References")]
-        [SerializeField] private PlayerStatsPresenter m_presenter;
+        [SerializeField] private PlayerStatsPresenter _presenter;
 
-        private UIDocument m_uiDocument;
-        private VisualElement m_rootPanel;
-        private Button m_healButton;
-        private Button m_damageButton;
-        private Button m_restButton;
+        private UIDocument _uiDocument;
+        private VisualElement _rootPanel;
+        private Button _healButton;
+        private Button _damageButton;
+        private Button _restButton;
 
         // EventRegistry handles cleanup automatically — avoids lambda unregister issues
-        private readonly EventRegistry m_eventRegistry = new();
+        private readonly EventRegistry _eventRegistry = new();
 
         private void Awake()
         {
-            m_uiDocument = GetComponent<UIDocument>();
+            _uiDocument = GetComponent<UIDocument>();
         }
 
         private void OnEnable()
         {
             // Query elements in OnEnable — UIDocument is guaranteed ready here
-            var root = m_uiDocument.rootVisualElement;
-            m_rootPanel = root.Q<VisualElement>("player-stats-panel");
+            var root = _uiDocument.rootVisualElement;
+            _rootPanel = root.Q<VisualElement>("player-stats-panel");
 
-            if (m_rootPanel != null && m_playerStats != null)
+            if (_rootPanel != null && _playerStats != null)
             {
-                m_rootPanel.dataSource = m_playerStats;
+                _rootPanel.dataSource = _playerStats;
             }
 
-            m_healButton = root.Q<Button>("heal-button");
-            m_damageButton = root.Q<Button>("damage-button");
-            m_restButton = root.Q<Button>("rest-button");
+            _healButton = root.Q<Button>("heal-button");
+            _damageButton = root.Q<Button>("damage-button");
+            _restButton = root.Q<Button>("rest-button");
 
-            if (m_healButton != null)
-                m_eventRegistry.RegisterCallback<ClickEvent>(m_healButton, OnHealClicked);
-            if (m_damageButton != null)
-                m_eventRegistry.RegisterCallback<ClickEvent>(m_damageButton, OnDamageClicked);
-            if (m_restButton != null)
-                m_eventRegistry.RegisterCallback<ClickEvent>(m_restButton, OnRestClicked);
+            if (_healButton != null)
+                _eventRegistry.RegisterCallback<ClickEvent>(_healButton, OnHealClicked);
+            if (_damageButton != null)
+                _eventRegistry.RegisterCallback<ClickEvent>(_damageButton, OnDamageClicked);
+            if (_restButton != null)
+                _eventRegistry.RegisterCallback<ClickEvent>(_restButton, OnRestClicked);
         }
 
         private void OnDisable()
         {
-            m_eventRegistry.Dispose(); // Unregisters all callbacks at once
+            _eventRegistry.Dispose(); // Unregisters all callbacks at once
         }
 
-        private void OnHealClicked(ClickEvent evt) => m_presenter?.OnHealClicked();
-        private void OnDamageClicked(ClickEvent evt) => m_presenter?.OnDamageClicked();
-        private void OnRestClicked(ClickEvent evt) => m_presenter?.OnRestClicked();
+        private void OnHealClicked(ClickEvent evt) => _presenter?.OnHealClicked();
+        private void OnDamageClicked(ClickEvent evt) => _presenter?.OnDamageClicked();
+        private void OnRestClicked(ClickEvent evt) => _presenter?.OnRestClicked();
 
         public void ShowPanel(bool show)
         {
-            if (m_rootPanel != null)
+            if (_rootPanel != null)
             {
-                m_rootPanel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+                _rootPanel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
             }
         }
     }
@@ -2008,26 +2008,26 @@ namespace Game.Presenters
     public class PlayerStatsPresenter : MonoBehaviour
     {
         [Header("Model Reference")]
-        [SerializeField] private PlayerStatsModel m_playerStats;
+        [SerializeField] private PlayerStatsModel _playerStats;
 
         [Header("Game Settings")]
-        [SerializeField] private int m_healAmount = 25;
-        [SerializeField] private int m_damageAmount = 10;
-        [SerializeField] private int m_staminaCost = 15;
+        [SerializeField] private int _healAmount = 25;
+        [SerializeField] private int _damageAmount = 10;
+        [SerializeField] private int _staminaCost = 15;
 
         private void Start()
         {
-            m_playerStats?.ResetStats();
+            _playerStats?.ResetStats();
         }
 
         public void OnHealClicked()
         {
-            if (m_playerStats == null) return;
+            if (_playerStats == null) return;
 
-            if (m_playerStats.CurrentStamina >= m_staminaCost)
+            if (_playerStats.CurrentStamina >= _staminaCost)
             {
-                m_playerStats.CurrentHealth += m_healAmount;
-                m_playerStats.CurrentStamina -= m_staminaCost;
+                _playerStats.CurrentHealth += _healAmount;
+                _playerStats.CurrentStamina -= _staminaCost;
             }
             else
             {
@@ -2037,11 +2037,11 @@ namespace Game.Presenters
 
         public void OnDamageClicked()
         {
-            if (m_playerStats == null) return;
+            if (_playerStats == null) return;
 
-            m_playerStats.CurrentHealth -= m_damageAmount;
+            _playerStats.CurrentHealth -= _damageAmount;
 
-            if (m_playerStats.CurrentHealth <= 0)
+            if (_playerStats.CurrentHealth <= 0)
             {
                 OnPlayerDeath();
             }
@@ -2049,18 +2049,18 @@ namespace Game.Presenters
 
         public void OnRestClicked()
         {
-            if (m_playerStats == null) return;
+            if (_playerStats == null) return;
 
-            m_playerStats.CurrentStamina = m_playerStats.MaxStamina;
+            _playerStats.CurrentStamina = _playerStats.MaxStamina;
         }
 
         public void ApplyDamage(int amount)
         {
-            if (m_playerStats == null) return;
+            if (_playerStats == null) return;
 
-            m_playerStats.CurrentHealth -= amount;
+            _playerStats.CurrentHealth -= amount;
 
-            if (m_playerStats.CurrentHealth <= 0)
+            if (_playerStats.CurrentHealth <= 0)
             {
                 OnPlayerDeath();
             }
@@ -2068,9 +2068,9 @@ namespace Game.Presenters
 
         public void AddGold(int amount)
         {
-            if (m_playerStats == null) return;
+            if (_playerStats == null) return;
 
-            m_playerStats.Gold += amount;
+            _playerStats.Gold += amount;
         }
 
         private void OnPlayerDeath()

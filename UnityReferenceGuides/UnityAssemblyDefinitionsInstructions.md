@@ -189,7 +189,7 @@ assembly-level points:
 #if ADDRESSABLES_1_21_OR_NEWER
     return await Addressables.LoadAssetAsync<GameObject>(key).Task;
 #else
-    return m_directReference;
+    return _directReference;
 #endif
 ```
 

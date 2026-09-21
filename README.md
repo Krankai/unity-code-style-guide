@@ -143,7 +143,7 @@ more useful than a comment when a field needs explanation in the Inspector, and 
 can expose values that benefit from runtime debugging or tuning. Use attributes such as `[Range]`,
 `[Header]`, and `[ContextMenu]` to improve clarity and usability for designers and developers
 interacting with the Inspector. Keep one field per line and include units directly in field names
-when relevant (for example, `m_speedInMetersPerSecond`) to avoid ambiguity.
+when relevant (for example, `_speedInMetersPerSecond`) to avoid ambiguity.
 
 Avoid attribution comments like `// Created by…`; version control already provides accurate ownership
 and history. When a component has hard dependencies, use `[RequireComponent(typeof(OtherComponent))]`
@@ -157,9 +157,9 @@ than deep class hierarchies. As a default, keep fields private to ensure proper 
 adherence to core object-oriented principles. Expose behavior through methods and controlled access
 points instead of shared state.
 
-To reduce guesswork and make intent obvious at a glance, use consistent naming prefixes: `m_` for
-private member variables, `k_` for constants, and `s_` for static variables. This added specificity
-improves readability and helps communicate how a value is meant to be used.
+To reduce guesswork and make intent obvious at a glance, use consistent naming: a `_` prefix for
+private member variables and mutable static fields, and PascalCase for constants and `static readonly`
+values. This added specificity improves readability and helps communicate how a value is meant to be used.
 
 Keep MonoBehaviours focused on a single responsibility. If a class begins to grow too large or
 complex, consider decomposing it into smaller components or moving data and configuration into
@@ -219,16 +219,16 @@ debug, easier to maintain, and easier for others — including your future self 
 // Calculate the current movement speed based on input
 
 // Less clear version with a ternary operator
-m_currentMovementSpeed = m_forwardMovementInput.y * (m_isRunning ? m_runningSpeed : m_walkSpeed);
+_currentMovementSpeed = _forwardMovementInput.y * (_isRunning ? _runningSpeed : _walkSpeed);
 
 // Clearer version with if-else
-if (m_isRunning)
+if (_isRunning)
 {
-    m_currentMovementSpeed = m_forwardMovementInput.y * m_runningSpeed;
+    _currentMovementSpeed = _forwardMovementInput.y * _runningSpeed;
 }
 else
 {
-    m_currentMovementSpeed = m_forwardMovementInput.y * m_walkSpeed;
+    _currentMovementSpeed = _forwardMovementInput.y * _walkSpeed;
 }
 ```
 
@@ -302,9 +302,13 @@ csharp_style_expression_bodied_properties = when_on_single_line:suggestion
 
 # Naming conventions
 # Symbol groups - order matters; the first matching rule wins
-dotnet_naming_symbols.const_fields.applicable_kinds = field
-dotnet_naming_symbols.const_fields.applicable_accessibilities = private, protected, private_protected
-dotnet_naming_symbols.const_fields.required_modifiers = const
+dotnet_naming_symbols.constant_fields.applicable_kinds = field
+dotnet_naming_symbols.constant_fields.applicable_accessibilities = *
+dotnet_naming_symbols.constant_fields.required_modifiers = const
+
+dotnet_naming_symbols.static_readonly_fields.applicable_kinds = field
+dotnet_naming_symbols.static_readonly_fields.applicable_accessibilities = *
+dotnet_naming_symbols.static_readonly_fields.required_modifiers = static, readonly
 
 dotnet_naming_symbols.static_fields.applicable_kinds = field
 dotnet_naming_symbols.static_fields.applicable_accessibilities = private, protected, private_protected
@@ -313,46 +317,36 @@ dotnet_naming_symbols.static_fields.required_modifiers = static
 dotnet_naming_symbols.private_fields.applicable_kinds = field
 dotnet_naming_symbols.private_fields.applicable_accessibilities = private, protected, private_protected
 
-dotnet_naming_symbols.public_const_fields.applicable_kinds = field
-dotnet_naming_symbols.public_const_fields.applicable_accessibilities = public, internal
-dotnet_naming_symbols.public_const_fields.required_modifiers = const
-
 dotnet_naming_symbols.properties.applicable_kinds = property
 dotnet_naming_symbols.properties.applicable_accessibilities = *
 
 dotnet_naming_symbols.interfaces.applicable_kinds = interface
 
-# Styles - note all three prefixes use camelCase after the prefix
-dotnet_naming_style.m_prefix_style.required_prefix = m_
-dotnet_naming_style.m_prefix_style.capitalization = camel_case
-
-dotnet_naming_style.k_prefix_style.required_prefix = k_
-dotnet_naming_style.k_prefix_style.capitalization = camel_case
-
-dotnet_naming_style.s_prefix_style.required_prefix = s_
-dotnet_naming_style.s_prefix_style.capitalization = camel_case
+# Styles - underscore prefix + camelCase for private fields and mutable statics, PascalCase for the rest
+dotnet_naming_style.underscore_prefix_style.required_prefix = _
+dotnet_naming_style.underscore_prefix_style.capitalization = camel_case
 
 dotnet_naming_style.pascal_case_style.capitalization = pascal_case
 
 dotnet_naming_style.i_prefix_style.required_prefix = I
 dotnet_naming_style.i_prefix_style.capitalization = pascal_case
 
-# Rules - const before static before plain private, so the right prefix wins
-dotnet_naming_rule.const_fields_should_have_k_prefix.symbols = const_fields
-dotnet_naming_rule.const_fields_should_have_k_prefix.style = k_prefix_style
-dotnet_naming_rule.const_fields_should_have_k_prefix.severity = suggestion
+# Rules - most specific first: constants, then static readonly, then mutable statics, then plain private fields
+dotnet_naming_rule.constants_should_be_pascal_case.symbols = constant_fields
+dotnet_naming_rule.constants_should_be_pascal_case.style = pascal_case_style
+dotnet_naming_rule.constants_should_be_pascal_case.severity = suggestion
 
-dotnet_naming_rule.static_fields_should_have_s_prefix.symbols = static_fields
-dotnet_naming_rule.static_fields_should_have_s_prefix.style = s_prefix_style
-dotnet_naming_rule.static_fields_should_have_s_prefix.severity = suggestion
+dotnet_naming_rule.static_readonly_should_be_pascal_case.symbols = static_readonly_fields
+dotnet_naming_rule.static_readonly_should_be_pascal_case.style = pascal_case_style
+dotnet_naming_rule.static_readonly_should_be_pascal_case.severity = suggestion
 
-dotnet_naming_rule.private_fields_should_have_m_prefix.symbols = private_fields
-dotnet_naming_rule.private_fields_should_have_m_prefix.style = m_prefix_style
-dotnet_naming_rule.private_fields_should_have_m_prefix.severity = suggestion
+dotnet_naming_rule.static_fields_should_have_underscore_prefix.symbols = static_fields
+dotnet_naming_rule.static_fields_should_have_underscore_prefix.style = underscore_prefix_style
+dotnet_naming_rule.static_fields_should_have_underscore_prefix.severity = suggestion
 
-dotnet_naming_rule.public_consts_should_be_pascal_case.symbols = public_const_fields
-dotnet_naming_rule.public_consts_should_be_pascal_case.style = pascal_case_style
-dotnet_naming_rule.public_consts_should_be_pascal_case.severity = suggestion
+dotnet_naming_rule.private_fields_should_have_underscore_prefix.symbols = private_fields
+dotnet_naming_rule.private_fields_should_have_underscore_prefix.style = underscore_prefix_style
+dotnet_naming_rule.private_fields_should_have_underscore_prefix.severity = suggestion
 
 dotnet_naming_rule.properties_should_be_pascal_case.symbols = properties
 dotnet_naming_rule.properties_should_be_pascal_case.style = pascal_case_style
@@ -402,11 +396,12 @@ A quick explanation of the key settings:
 - 📝 `csharp_new_line_before_open_brace = all` — this is the key that produces Allman braces.
 - 📝 `csharp_style_var_*` — `var` for built-in types and where the type is already apparent on the
   right-hand side, explicit types everywhere else.
-- 📝 The `dotnet_naming_*` rules enforce `m_`/`k_`/`s_` with camelCase after the prefix, PascalCase
-  properties, and the `I` prefix on interfaces. **Rule order matters** — const and static are
-  declared before plain private fields so a `private static` field gets `s_`, not `m_`.
-- 📝 `public const` on a static lookup class is treated as API surface and stays PascalCase, which is
-  why `Tags.Player` doesn't need a prefix.
+- 📝 The `dotnet_naming_*` rules enforce a `_` prefix with camelCase on private fields and mutable
+  statics, PascalCase on constants, `static readonly` values and properties, and the `I` prefix on
+  interfaces. **Rule order matters** — the constant and `static readonly` rules come before the mutable
+  static and plain private rules, so a `private static readonly` field gets PascalCase rather than `_`.
+- 📝 The same PascalCase rule covers every constant regardless of accessibility, which is why
+  `Tags.Player` and a `private const int MaxCount` follow one convention.
 - 📝 `file_header_template` — a placeholder for file headers, commented out by default.
 
 **UXML / USS**

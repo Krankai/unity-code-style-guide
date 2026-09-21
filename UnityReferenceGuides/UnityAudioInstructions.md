@@ -78,20 +78,20 @@ everything below about 0.8 sounds identical and the bottom half does nothing.
 ```csharp
 public class VolumeSettings : MonoBehaviour
 {
-    private const float k_minDecibels = -80f;
-    private const float k_silenceThreshold = 0.0001f;
+    private const float MinDecibels = -80f;
+    private const float SilenceThreshold = 0.0001f;
 
-    [SerializeField] private AudioMixer m_mixer;
+    [SerializeField] private AudioMixer _mixer;
 
     /// <summary>Sets a mixer volume from a linear 0–1 slider value.</summary>
     public void SetVolume(string exposedParameter, float linearValue)
     {
         // Log10(0) is -Infinity, which the mixer rejects - clamp to silence instead
-        float decibels = linearValue <= k_silenceThreshold
-            ? k_minDecibels
+        float decibels = linearValue <= SilenceThreshold
+            ? MinDecibels
             : Mathf.Log10(linearValue) * 20f;
 
-        if (!m_mixer.SetFloat(exposedParameter, decibels))
+        if (!_mixer.SetFloat(exposedParameter, decibels))
         {
             Debug.LogError($"[{GetType().Name}] '{exposedParameter}' is not exposed on the mixer.", this);
         }
@@ -100,7 +100,7 @@ public class VolumeSettings : MonoBehaviour
     /// <summary>Reads a mixer volume back as a linear 0–1 value, for restoring a slider.</summary>
     public float GetVolume(string exposedParameter)
     {
-        if (!m_mixer.GetFloat(exposedParameter, out float decibels))
+        if (!_mixer.GetFloat(exposedParameter, out float decibels))
         {
             return 1f;
         }
@@ -129,7 +129,7 @@ public class VolumeSettings : MonoBehaviour
 ```csharp
 public void SetPaused(bool isPaused)
 {
-    AudioMixerSnapshot target = isPaused ? m_pausedSnapshot : m_defaultSnapshot;
+    AudioMixerSnapshot target = isPaused ? _pausedSnapshot : _defaultSnapshot;
     target.TransitionTo(0.25f);
 }
 ```
@@ -174,26 +174,26 @@ instantiating a bullet per shot — pool them.
 ```csharp
 public class AudioService : MonoBehaviour
 {
-    [SerializeField] private AudioSource m_sourcePrefab;
-    [SerializeField] private int m_maxVoices = 32;
+    [SerializeField] private AudioSource _sourcePrefab;
+    [SerializeField] private int _maxVoices = 32;
 
-    private ObjectPool<AudioSource> m_pool;
+    private ObjectPool<AudioSource> _pool;
 
     private void Awake()
     {
-        m_pool = new ObjectPool<AudioSource>(
-            createFunc: () => Instantiate(m_sourcePrefab, transform),
+        _pool = new ObjectPool<AudioSource>(
+            createFunc: () => Instantiate(_sourcePrefab, transform),
             actionOnGet: source => source.gameObject.SetActive(true),
             actionOnRelease: ResetSource,
             actionOnDestroy: source => Destroy(source.gameObject),
             collectionCheck: false,
             defaultCapacity: 8,
-            maxSize: m_maxVoices);
+            maxSize: _maxVoices);
     }
 
-    public async Awaitable PlayAtAsync(SoundDataSO sound, Vector3 position, CancellationToken token)
+    public async Awaitable PlayAtAsync(SoundConfig sound, Vector3 position, CancellationToken token)
     {
-        AudioSource source = m_pool.Get();
+        AudioSource source = _pool.Get();
 
         source.transform.position = position;
         source.clip = sound.Clip;
@@ -208,7 +208,7 @@ public class AudioService : MonoBehaviour
 
         if (this == null) return;
 
-        m_pool.Release(source);
+        _pool.Release(source);
     }
 
     private static void ResetSource(AudioSource source)

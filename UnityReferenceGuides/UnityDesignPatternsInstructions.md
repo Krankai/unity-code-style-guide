@@ -59,15 +59,15 @@ typeof(PlayerMovement))]
 
 public class Player : MonoBehaviour
 {
-    [SerializeField] private PlayerAudio m_playerAudio;
-    [SerializeField] private PlayerInput m_playerInput;
-    [SerializeField] private PlayerMovement m_playerMovement;
+    [SerializeField] private PlayerAudio _playerAudio;
+    [SerializeField] private PlayerInput _playerInput;
+    [SerializeField] private PlayerMovement _playerMovement;
 
     private void Awake()
     {
-        m_playerAudio = GetComponent<PlayerAudio>();
-        m_playerInput = GetComponent<PlayerInput>();
-        m_playerMovement = GetComponent<PlayerMovement>();
+        _playerAudio = GetComponent<PlayerAudio>();
+        _playerInput = GetComponent<PlayerInput>();
+        _playerMovement = GetComponent<PlayerMovement>();
     }
 }
 
@@ -145,24 +145,24 @@ public abstract class Unit
 
 public class InfantryUnit : Unit
 {
-    private int m_baseDamage = 10;
+    private int _baseDamage = 10;
 
     public override int CalculateDamage()
     {
         // Returns a positive damage value as expected by consumers
-        return m_baseDamage;
+        return _baseDamage;
     }
 }
 
 public class CavalryUnit : Unit
 {
-    private int m_baseDamage = 15;
-    private int m_chargeBonus = 5;
+    private int _baseDamage = 15;
+    private int _chargeBonus = 5;
 
     public override int CalculateDamage()
     {
         // Also returns a positive damage value — substitutable for Unit
-        return m_baseDamage + m_chargeBonus;
+        return _baseDamage + _chargeBonus;
     }
 }
 
@@ -181,8 +181,8 @@ public class RangedUnit : Unit
     public override int CalculateDamage()
     {
         // Returns -1 when out of ammo — callers don't expect negative values
-        if (m_ammo <= 0) return -1;
-        return m_baseDamage;
+        if (_ammo <= 0) return -1;
+        return _baseDamage;
     }
 }
 ```
@@ -260,16 +260,16 @@ public class UnityAudioService : IAudioService
 // The controller depends on the interface, not the concrete class
 public class CombatController : MonoBehaviour
 {
-    private IAudioService m_audioService;
+    private IAudioService _audioService;
 
     private void Awake()
     {
-        m_audioService = ServiceLocator.Resolve<IAudioService>();
+        _audioService = ServiceLocator.Resolve<IAudioService>();
     }
 
     public void OnAttackLanded()
     {
-        m_audioService.PlaySound("SwordHit");
+        _audioService.PlaySound("SwordHit");
     }
 }
 ```
@@ -291,7 +291,7 @@ These patterns are actively used in this codebase. When generating new code, mat
 | [Singleton](#singleton-pattern) | `UIRootController.cs` | Global access to UI state controller |
 | [Service Locator](#service-locator--dependency-injection) | `ServiceLocator.cs` / `DependencyInjector.cs` | Runtime dependency resolution |
 | [Composition](#composition-over-inheritance) | `Tile` + `TileGarrison` etc. | Decomposing tile logic into focused components |
-| ScriptableObject Data | Various `*SO` / `*DataSO` classes | Static configuration data |
+| ScriptableObject Data | Various `*Config` classes | Static configuration data |
 | Data Binding | `[CreateProperty]` + `dataSource` | UI Toolkit automatic UI updates |
 
 ### Reference Patterns
@@ -382,11 +382,11 @@ Use the State pattern for complex state-dependent behavior, such as character co
 // Base state class
 public abstract class PlayerState
 {
-    protected PlayerController m_controller;
+    protected PlayerController _controller;
 
     public PlayerState(PlayerController controller)
     {
-        m_controller = controller;
+        _controller = controller;
     }
 
     public abstract void Enter();
@@ -407,27 +407,27 @@ public class IdleState : PlayerState
 // Controller manages state transitions
 public class PlayerController : MonoBehaviour
 {
-    private PlayerState m_currentState;
-    private IdleState m_idleState;
-    private RunningState m_runningState;
+    private PlayerState _currentState;
+    private IdleState _idleState;
+    private RunningState _runningState;
 
     private void Awake()
     {
-        m_idleState = new IdleState(this);
-        m_runningState = new RunningState(this);
-        m_currentState = m_idleState;
+        _idleState = new IdleState(this);
+        _runningState = new RunningState(this);
+        _currentState = _idleState;
     }
 
     private void Update()
     {
-        m_currentState.Update();
+        _currentState.Update();
     }
 
     public void ChangeState(PlayerState newState)
     {
-        m_currentState.Exit();
-        m_currentState = newState;
-        m_currentState.Enter();
+        _currentState.Exit();
+        _currentState = newState;
+        _currentState.Enter();
     }
 }
 ```
@@ -452,13 +452,13 @@ public enum UIScreen
 
 public class UIRootController : MonoBehaviour
 {
-    [SerializeField] private UIScreen m_currentState = UIScreen.DefaultMapView;
+    [SerializeField] private UIScreen _currentState = UIScreen.DefaultMapView;
 
-    public UIScreen CurrentState => m_currentState;
+    public UIScreen CurrentState => _currentState;
 
     public void ChangeState(UIScreen newState)
     {
-        m_currentState = newState;
+        _currentState = newState;
         StaticGameEvents.InvokeOnUIStateChanged(CurrentState);
         ApplyStateToPanels(newState);
     }
@@ -471,15 +471,15 @@ public class UIRootController : MonoBehaviour
         switch (state)
         {
             case UIScreen.DefaultMapView:
-                SetPanelsActive(m_resourceControllerView, true);
-                SetPanelsActive(m_gameTurnControllerView, true);
-                SetPanelsActive(m_logPanelView, true);
+                SetPanelsActive(_resourceControllerView, true);
+                SetPanelsActive(_gameTurnControllerView, true);
+                SetPanelsActive(_logPanelView, true);
                 break;
 
             case UIScreen.ArmyView:
-                SetPanelsActive(m_resourceControllerView, true);
-                SetPanelsActive(m_commanderView, true);
-                SetPanelsActive(m_armyLowerPanelView, true);
+                SetPanelsActive(_resourceControllerView, true);
+                SetPanelsActive(_commanderView, true);
+                SetPanelsActive(_armyLowerPanelView, true);
                 break;
 
             // Additional states follow the same pattern...
@@ -510,13 +510,13 @@ public class UIRootController : MonoBehaviour
 // UIViewBase.cs — Base class for all UI Toolkit panels (actual project pattern)
 public abstract class UIViewBase : MonoBehaviour
 {
-    protected UIDocument m_uiDocument;
-    protected VisualElement m_rootVisualElement;
+    protected UIDocument _uiDocument;
+    protected VisualElement _rootVisualElement;
 
     protected virtual void Awake()
     {
-        m_uiDocument = GetComponent<UIDocument>();
-        m_rootVisualElement = m_uiDocument.rootVisualElement;
+        _uiDocument = GetComponent<UIDocument>();
+        _rootVisualElement = _uiDocument.rootVisualElement;
         InitializeElements();   // Step 1: subclass caches UI elements
     }
 
@@ -544,13 +544,13 @@ public abstract class UIViewBase : MonoBehaviour
 // Example: A concrete UI panel following the template
 public class TileView : UIViewBase
 {
-    private VisualElement m_tilePanel;
-    private Label m_populationLabel;
+    private VisualElement _tilePanel;
+    private Label _populationLabel;
 
     protected override void InitializeElements()
     {
-        m_tilePanel = m_rootVisualElement.Q<VisualElement>("tile-panel");
-        m_populationLabel = m_rootVisualElement.Q<Label>("population-label");
+        _tilePanel = _rootVisualElement.Q<VisualElement>("tile-panel");
+        _populationLabel = _rootVisualElement.Q<Label>("population-label");
     }
 
     protected override void RegisterCallbacks()
@@ -565,12 +565,12 @@ public class TileView : UIViewBase
 
     public override void ShowPanel(bool show)
     {
-        m_tilePanel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
+        _tilePanel.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
     }
 
     private void HandleTileSelected(Tile tile)
     {
-        m_populationLabel.text = tile.CurrentPopulation.ToString();
+        _populationLabel.text = tile.CurrentPopulation.ToString();
     }
 }
 ```
@@ -586,7 +586,7 @@ public class TileView : UIViewBase
 - ⚠️ Consider limiting the use of Singletons for smaller scale projects.
 - ✅ Use the Singleton pattern for global managers that need to be accessed from multiple places (e.g., AudioManager, GameManager).
 - ⚠️ Implement thread-safe lazy initialization to ensure the singleton instance is created only when needed.
-- ✅ Use the `s_` prefix for the static instance field, per the [style guide](../UnityStyleGuide.md#fields).
+- ✅ Use the `_` prefix for the mutable static instance field, per the [style guide](../UnityStyleGuide.md#fields).
 - ✅ Provide a static Instance property for easy access to the singleton instance.
 - ✅ Use `DontDestroyOnLoad` to persist the singleton across scene loads if necessary.
 - ✅ Ensure proper cleanup of resources when the singleton is destroyed.
@@ -595,28 +595,28 @@ public class TileView : UIViewBase
 // Singleton pattern following the style guide's naming conventions
 public class UIRootController : MonoBehaviour
 {
-    // Use s_ prefix for static fields
-    private static UIRootController s_instance;
+    // Mutable static field: `_` prefix, same as instance fields
+    private static UIRootController _instance;
 
     public static UIRootController Instance
     {
         get
         {
-            if (s_instance == null)
-                s_instance = FindAnyObjectByType<UIRootController>();
-            return s_instance;
+            if (_instance == null)
+                _instance = FindAnyObjectByType<UIRootController>();
+            return _instance;
         }
     }
 
     private void Awake()
     {
         // Ensure singleton reference is set and handle duplicates
-        if (s_instance != null && s_instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
-        s_instance = this;
+        _instance = this;
     }
 }
 ```
@@ -625,26 +625,26 @@ public class UIRootController : MonoBehaviour
 // Singleton with DontDestroyOnLoad for cross-scene persistence
 public class AudioManager : MonoBehaviour
 {
-    private static AudioManager s_instance;
+    private static AudioManager _instance;
 
     public static AudioManager Instance
     {
         get
         {
-            if (s_instance == null)
-                s_instance = FindAnyObjectByType<AudioManager>();
-            return s_instance;
+            if (_instance == null)
+                _instance = FindAnyObjectByType<AudioManager>();
+            return _instance;
         }
     }
 
     private void Awake()
     {
-        if (s_instance != null && s_instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
-        s_instance = this;
+        _instance = this;
         DontDestroyOnLoad(gameObject);
     }
 }
@@ -666,16 +666,16 @@ public class AudioManager : MonoBehaviour
 // ServiceLocator.cs — Lightweight service registry (actual project code)
 public static class ServiceLocator
 {
-    private static readonly Dictionary<Type, object> s_services = new();
+    private static readonly Dictionary<Type, object> Services = new();
 
     public static void Register<T>(T service) where T : class
     {
-        s_services[typeof(T)] = service;
+        Services[typeof(T)] = service;
     }
 
     public static T Resolve<T>() where T : class
     {
-        if (s_services.TryGetValue(typeof(T), out object service))
+        if (Services.TryGetValue(typeof(T), out object service))
         {
             return service as T;
         }
@@ -684,12 +684,12 @@ public static class ServiceLocator
 
     public static void Unregister<T>() where T : class
     {
-        s_services.Remove(typeof(T));
+        Services.Remove(typeof(T));
     }
 
     public static void Clear()
     {
-        s_services.Clear();
+        Services.Clear();
     }
 }
 ```
@@ -700,17 +700,17 @@ public static class ServiceLocator
 // DependencyInjector.cs — Registers scene services at startup (actual project code)
 public class DependencyInjector : MonoBehaviour
 {
-    [SerializeField] private GameResources m_gameResources;
-    [SerializeField] private RecruitmentManager m_recruitmentManager;
-    [SerializeField] private BuildQueueService m_tileConstructionManager;
-    [SerializeField] private GameMapController m_gameMapController;
+    [SerializeField] private GameResources _gameResources;
+    [SerializeField] private RecruitmentManager _recruitmentManager;
+    [SerializeField] private BuildQueueService _tileConstructionManager;
+    [SerializeField] private GameMapController _gameMapController;
 
     private void Awake()
     {
-        ServiceLocator.Register(m_gameResources);
-        ServiceLocator.Register(m_recruitmentManager);
-        ServiceLocator.Register(m_tileConstructionManager);
-        ServiceLocator.Register(m_gameMapController);
+        ServiceLocator.Register(_gameResources);
+        ServiceLocator.Register(_recruitmentManager);
+        ServiceLocator.Register(_tileConstructionManager);
+        ServiceLocator.Register(_gameMapController);
     }
 
     private void OnDestroy()
@@ -725,14 +725,14 @@ public class DependencyInjector : MonoBehaviour
 ```csharp
 public class RecruitmentManager : MonoBehaviour
 {
-    private GameResources m_gameResources;
-    private GameMapController m_gameMapController;
+    private GameResources _gameResources;
+    private GameMapController _gameMapController;
 
     private void Awake()
     {
         // Resolve dependencies registered by DependencyInjector
-        m_gameResources = ServiceLocator.Resolve<GameResources>();
-        m_gameMapController = ServiceLocator.Resolve<GameMapController>();
+        _gameResources = ServiceLocator.Resolve<GameResources>();
+        _gameMapController = ServiceLocator.Resolve<GameMapController>();
     }
 }
 ```
@@ -752,12 +752,12 @@ public class RecruitmentManager : MonoBehaviour
 // Tile.cs — The primary tile component delegates to focused sub-components
 public class Tile : MonoBehaviour
 {
-    [SerializeField] private TileGarrison m_tileMilitary;
+    [SerializeField] private TileGarrison _tileMilitary;
 
     private void Awake()
     {
         // Wire sibling components via GetComponent
-        m_tileMilitary = GetComponent<TileGarrison>();
+        _tileMilitary = GetComponent<TileGarrison>();
     }
 
     // Tile handles population, happiness, and taxation
@@ -770,13 +770,13 @@ public class Tile : MonoBehaviour
 // TileGarrison.cs — Focused on military/recruitment concerns only
 public class TileGarrison : MonoBehaviour
 {
-    private Tile m_tile;
-    [SerializeField] private int m_currentRecruits;
-    [SerializeField] private int m_newRecruitsPerTurn = 5;
+    private Tile _tile;
+    [SerializeField] private int _currentRecruits;
+    [SerializeField] private int _newRecruitsPerTurn = 5;
 
     private void Awake()
     {
-        m_tile = GetComponent<Tile>();
+        _tile = GetComponent<Tile>();
     }
 
     private void OnEnable()
@@ -791,7 +791,7 @@ public class TileGarrison : MonoBehaviour
 
     public void IncreaseRecruitPoolEndOfTurn()
     {
-        m_currentRecruits += m_newRecruitsPerTurn;
+        _currentRecruits += _newRecruitsPerTurn;
     }
 }
 ```
@@ -832,13 +832,13 @@ using UnityEngine.Pool;
 
 public class BulletPool : MonoBehaviour
 {
-    [SerializeField] private Bullet m_bulletPrefab;
-    private ObjectPool<Bullet> m_pool;
+    [SerializeField] private Bullet _bulletPrefab;
+    private ObjectPool<Bullet> _pool;
 
     private void Awake()
     {
-        m_pool = new ObjectPool<Bullet>(
-            createFunc: () => Instantiate(m_bulletPrefab),
+        _pool = new ObjectPool<Bullet>(
+            createFunc: () => Instantiate(_bulletPrefab),
             actionOnGet: bullet => bullet.gameObject.SetActive(true),
             actionOnRelease: bullet => bullet.gameObject.SetActive(false),
             actionOnDestroy: bullet => Destroy(bullet.gameObject),
@@ -850,12 +850,12 @@ public class BulletPool : MonoBehaviour
 
     public Bullet GetFromPool()
     {
-        return m_pool.Get();
+        return _pool.Get();
     }
 
     public void ReturnToPool(Bullet bullet)
     {
-        m_pool.Release(bullet);
+        _pool.Release(bullet);
     }
 }
 ```
@@ -897,7 +897,7 @@ public void ProcessNearbyEnemies(Vector3 position, float radius)
 // Example: Factory method for creating army units from ScriptableObject data
 public class ArmyController : MonoBehaviour
 {
-    [SerializeField] private List<ArmyUnitData> m_activeUnits = new();
+    [SerializeField] private List<ArmyUnitData> _activeUnits = new();
 
     public void RecruitUnit(ArmyUnitSO unitData)
     {
@@ -907,7 +907,7 @@ public class ArmyController : MonoBehaviour
         newUnit.CurrentMorale = 100;
         newUnit.CurrentSquadSize = unitData.SizeSquad;
 
-        m_activeUnits.Add(newUnit);
+        _activeUnits.Add(newUnit);
     }
 }
 ```
@@ -916,17 +916,17 @@ public class ArmyController : MonoBehaviour
 // Example: A more formal factory for spawning GameObjects
 public class EnemyFactory : MonoBehaviour
 {
-    [SerializeField] private GameObject m_infantryPrefab;
-    [SerializeField] private GameObject m_cavalryPrefab;
-    [SerializeField] private GameObject m_archerPrefab;
+    [SerializeField] private GameObject _infantryPrefab;
+    [SerializeField] private GameObject _cavalryPrefab;
+    [SerializeField] private GameObject _archerPrefab;
 
     public GameObject CreateEnemy(UnitCategory category, Vector3 spawnPosition)
     {
         GameObject prefab = category switch
         {
-            UnitCategory.Infantry => m_infantryPrefab,
-            UnitCategory.Cavalry  => m_cavalryPrefab,
-            UnitCategory.Ranged   => m_archerPrefab,
+            UnitCategory.Infantry => _infantryPrefab,
+            UnitCategory.Cavalry  => _cavalryPrefab,
+            UnitCategory.Ranged   => _archerPrefab,
             _ => throw new ArgumentException($"Unknown unit category: {category}")
         };
 
@@ -956,25 +956,25 @@ public interface ICommand
 // Concrete command: move an army
 public class MoveArmyCommand : ICommand
 {
-    private readonly ArmyController m_army;
-    private readonly Vector3 m_targetPosition;
-    private Vector3 m_previousPosition;
+    private readonly ArmyController _army;
+    private readonly Vector3 _targetPosition;
+    private Vector3 _previousPosition;
 
     public MoveArmyCommand(ArmyController army, Vector3 targetPosition)
     {
-        m_army = army;
-        m_targetPosition = targetPosition;
+        _army = army;
+        _targetPosition = targetPosition;
     }
 
     public void Execute()
     {
-        m_previousPosition = m_army.transform.position;
-        m_army.transform.position = m_targetPosition;
+        _previousPosition = _army.transform.position;
+        _army.transform.position = _targetPosition;
     }
 
     public void Undo()
     {
-        m_army.transform.position = m_previousPosition;
+        _army.transform.position = _previousPosition;
     }
 }
 ```
@@ -983,32 +983,32 @@ public class MoveArmyCommand : ICommand
 // Command invoker with undo/redo stacks
 public class CommandInvoker
 {
-    private readonly Stack<ICommand> m_undoStack = new();
-    private readonly Stack<ICommand> m_redoStack = new();
+    private readonly Stack<ICommand> _undoStack = new();
+    private readonly Stack<ICommand> _redoStack = new();
 
     public void ExecuteCommand(ICommand command)
     {
         command.Execute();
-        m_undoStack.Push(command);
-        m_redoStack.Clear();
+        _undoStack.Push(command);
+        _redoStack.Clear();
     }
 
     public void Undo()
     {
-        if (m_undoStack.Count == 0) return;
+        if (_undoStack.Count == 0) return;
 
-        var command = m_undoStack.Pop();
+        var command = _undoStack.Pop();
         command.Undo();
-        m_redoStack.Push(command);
+        _redoStack.Push(command);
     }
 
     public void Redo()
     {
-        if (m_redoStack.Count == 0) return;
+        if (_redoStack.Count == 0) return;
 
-        var command = m_redoStack.Pop();
+        var command = _redoStack.Pop();
         command.Execute();
-        m_undoStack.Push(command);
+        _undoStack.Push(command);
     }
 }
 ```
@@ -1039,22 +1039,22 @@ public class DirectMovement : IMovementStrategy
 
 public class PatrolMovement : IMovementStrategy
 {
-    private readonly Vector3[] m_waypoints;
-    private int m_currentWaypointIndex;
+    private readonly Vector3[] _waypoints;
+    private int _currentWaypointIndex;
 
     public PatrolMovement(Vector3[] waypoints)
     {
-        m_waypoints = waypoints;
+        _waypoints = waypoints;
     }
 
     public void Move(Transform transform, Vector3 target, float speed)
     {
-        var waypoint = m_waypoints[m_currentWaypointIndex];
+        var waypoint = _waypoints[_currentWaypointIndex];
         transform.position = Vector3.MoveTowards(transform.position, waypoint, speed * Time.deltaTime);
 
         if (Vector3.Distance(transform.position, waypoint) < 0.1f)
         {
-            m_currentWaypointIndex = (m_currentWaypointIndex + 1) % m_waypoints.Length;
+            _currentWaypointIndex = (_currentWaypointIndex + 1) % _waypoints.Length;
         }
     }
 }
@@ -1064,19 +1064,19 @@ public class PatrolMovement : IMovementStrategy
 // Context: unit uses a strategy that can be swapped at runtime
 public class ArmyMovementController : MonoBehaviour
 {
-    [SerializeField] private float m_moveSpeed = 5f;
+    [SerializeField] private float _moveSpeed = 5f;
 
-    private IMovementStrategy m_movementStrategy;
-    private Vector3 m_targetPosition;
+    private IMovementStrategy _movementStrategy;
+    private Vector3 _targetPosition;
 
     public void SetMovementStrategy(IMovementStrategy strategy)
     {
-        m_movementStrategy = strategy;
+        _movementStrategy = strategy;
     }
 
     private void Update()
     {
-        m_movementStrategy?.Move(transform, m_targetPosition, m_moveSpeed);
+        _movementStrategy?.Move(transform, _targetPosition, _moveSpeed);
     }
 }
 ```

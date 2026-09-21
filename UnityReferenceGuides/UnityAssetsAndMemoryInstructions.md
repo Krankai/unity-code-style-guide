@@ -66,7 +66,7 @@ Unity has two separate heaps, and conflating them wastes a lot of debugging time
 ### Direct references are not free
 
 - ⚠️ Every direct reference in a prefab or scene is loaded **when that prefab or scene loads**,
-  transitively. A prefab referencing a `WeaponDataSO` that references a 4K icon loads that icon,
+  transitively. A prefab referencing a `WeaponConfig` that references a 4K icon loads that icon,
   even if the weapon is never equipped.
 - ✅ Break the chain with an `AssetReference` (Addressables) when the tail of the graph is large or
   rarely needed.
@@ -91,32 +91,32 @@ Unity has two separate heaps, and conflating them wastes a lot of debugging time
 ```csharp
 public class WeaponLoader : MonoBehaviour
 {
-    [SerializeField] private AssetReferenceGameObject m_weaponReference;
+    [SerializeField] private AssetReferenceGameObject _weaponReference;
 
-    private AsyncOperationHandle<GameObject> m_handle;
+    private AsyncOperationHandle<GameObject> _handle;
 
     private async Awaitable LoadAsync()
     {
-        m_handle = m_weaponReference.LoadAssetAsync<GameObject>();
-        await m_handle.Task;
+        _handle = _weaponReference.LoadAssetAsync<GameObject>();
+        await _handle.Task;
 
         if (this == null) return;   // Destroyed while loading
 
-        if (m_handle.Status != AsyncOperationStatus.Succeeded)
+        if (_handle.Status != AsyncOperationStatus.Succeeded)
         {
             Debug.LogError($"[{GetType().Name}] Failed to load weapon asset.", this);
             return;
         }
 
-        Instantiate(m_handle.Result, transform);
+        Instantiate(_handle.Result, transform);
     }
 
     private void OnDestroy()
     {
         // Every load needs its release, or the bundle never unloads
-        if (m_handle.IsValid())
+        if (_handle.IsValid())
         {
-            Addressables.Release(m_handle);
+            Addressables.Release(_handle);
         }
     }
 }

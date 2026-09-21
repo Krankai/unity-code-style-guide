@@ -24,8 +24,8 @@ detection, the `unity-project-review` skill covers that. This skill answers a na
 3. **Read the tech stack.** `UnityCustomInstructions/UnityTechStack.md` says which input, UI, and
    render systems are in use. A uGUI finding is noise in a UI Toolkit project.
 4. **Confirm the scope** with the user: whole project, one folder, or changes on the current branch.
-5. **Establish the naming convention from the guide, not from memory.** The prefixes (`m_`/`k_`/`s_`)
-   and their casing are configurable preferences. Read them out of the guide before flagging anything.
+5. **Establish the naming convention from the guide, not from memory.** The `_` prefix and the casing rules
+   for fields, constants and statics are configurable preferences. Read them out of the guide before flagging anything.
 
 ## Phase 1 — Static analysis (always runs)
 
@@ -58,11 +58,11 @@ this is the one finding where a count is not enough.
 
 | Check | How |
 |---|---|
-| Private fields missing the `m_` prefix | Fields declared `private`/implicit without the prefix |
-| Wrong casing after a prefix | `m_`/`k_`/`s_` followed by an uppercase letter, when the guide says camelCase |
+| Private fields missing the `_` prefix | Fields declared `private`/implicit without the prefix |
+| Wrong casing after the prefix | `_` followed by an uppercase letter, when the guide says camelCase |
 | `public` fields on MonoBehaviours | Should be `[SerializeField] private` plus a property |
-| Constants not using `k_` | `private const` without the prefix (public consts on lookup classes are exempt) |
-| Statics not using `s_` | `static` fields without the prefix |
+| Constants not in PascalCase | `const` or `static readonly` fields, any accessibility, not in PascalCase |
+| Mutable statics missing `_` | non-readonly `static` fields without the `_` prefix |
 | Interfaces without `I` | `interface` declarations |
 | Booleans not reading as predicates | `bool` fields/properties not starting with is/has/can/should |
 | Methods not starting with a verb | Especially gerunds (`Walking()`) |

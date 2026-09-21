@@ -58,7 +58,7 @@ confusion. Pick one per project and note it in your tech stack file.
 | `PlayerInput` component | Add the component, pick a behaviour | Local multiplayer, quick prototypes | Magic-string or Inspector-wired callbacks |
 | Raw `InputAction` fields | `[SerializeField] private InputActionReference` | One-off actions on a single component | Easy to forget `Enable()` |
 
-- ✅ **Default to the generated C# class.** It gives you `m_input.Player.Jump` with IntelliSense, so
+- ✅ **Default to the generated C# class.** It gives you `_input.Player.Jump` with IntelliSense, so
   a renamed action becomes a compile error rather than silent dead input.
 - ⚠️ `PlayerInput`'s *Send Messages* and *Broadcast Messages* behaviours use reflection on method
   names (`OnJump`). They're fast to set up and impossible to refactor safely. Prefer *Invoke Unity
@@ -70,29 +70,29 @@ confusion. Pick one per project and note it in your tech stack file.
 // Generated C# class - the default recommendation
 public class PlayerController : MonoBehaviour
 {
-    private GameInput m_input;          // Generated from GameInput.inputactions
+    private GameInput _input;           // Generated from GameInput.inputactions
 
     private void Awake()
     {
-        m_input = new GameInput();
+        _input = new GameInput();
     }
 
     private void OnEnable()
     {
-        m_input.Player.Enable();
-        m_input.Player.Jump.performed += HandleJumpPerformed;
+        _input.Player.Enable();
+        _input.Player.Jump.performed += HandleJumpPerformed;
     }
 
     private void OnDisable()
     {
-        m_input.Player.Jump.performed -= HandleJumpPerformed;
-        m_input.Player.Disable();
+        _input.Player.Jump.performed -= HandleJumpPerformed;
+        _input.Player.Disable();
     }
 
     private void OnDestroy()
     {
         // The generated class is IDisposable - it holds native memory
-        m_input?.Dispose();
+        _input?.Dispose();
     }
 
     private void HandleJumpPerformed(InputAction.CallbackContext context)
@@ -140,22 +140,22 @@ Every action raises up to three events. Choosing the wrong one is the most commo
 private void OnEnable()
 {
     // Value action: track changes AND the return to neutral
-    m_input.Player.Move.performed += HandleMovePerformed;
-    m_input.Player.Move.canceled  += HandleMoveCanceled;
+    _input.Player.Move.performed += HandleMovePerformed;
+    _input.Player.Move.canceled   += HandleMoveCanceled;
 
     // Button action: performed only
-    m_input.Player.Jump.performed += HandleJumpPerformed;
+    _input.Player.Jump.performed += HandleJumpPerformed;
 }
 
 private void HandleMovePerformed(InputAction.CallbackContext context)
 {
-    m_moveInput = context.ReadValue<Vector2>();
+    _moveInput = context.ReadValue<Vector2>();
 }
 
 private void HandleMoveCanceled(InputAction.CallbackContext context)
 {
     // Without this the character keeps walking after the stick is released
-    m_moveInput = Vector2.zero;
+    _moveInput = Vector2.zero;
 }
 ```
 
@@ -176,10 +176,10 @@ applied to input, and it bites harder here because the action asset outlives the
 
 ```csharp
 // ❌ Cannot be unsubscribed - the action asset now holds this component forever
-m_input.Player.Jump.performed += ctx => Jump();
+_input.Player.Jump.performed += ctx => Jump();
 
 // ✅ Method group - removable
-m_input.Player.Jump.performed += HandleJumpPerformed;
+_input.Player.Jump.performed += HandleJumpPerformed;
 ```
 
 ---
@@ -197,21 +197,21 @@ Action maps are the cleanest state boundary the Input System gives you. Use them
 ```csharp
 public class InputModeService : MonoBehaviour
 {
-    private GameInput m_input;
+    private GameInput _input;
 
     public void SetMode(InputMode mode)
     {
         // Disable everything first so no map is left half-enabled
-        m_input.Player.Disable();
-        m_input.UI.Disable();
+        _input.Player.Disable();
+        _input.UI.Disable();
 
         switch (mode)
         {
             case InputMode.Gameplay:
-                m_input.Player.Enable();
+                _input.Player.Enable();
                 break;
             case InputMode.Menu:
-                m_input.UI.Enable();
+                _input.UI.Enable();
                 break;
         }
     }
@@ -231,18 +231,18 @@ public class InputModeService : MonoBehaviour
   because `FixedUpdate` may not run on a given frame.
 
 ```csharp
-private Vector2 m_moveInput;
+private Vector2 _moveInput;
 
 private void Update()
 {
     // Poll continuous values - no event, no cached-value bugs
-    m_moveInput = m_input.Player.Move.ReadValue<Vector2>();
+    _moveInput = _input.Player.Move.ReadValue<Vector2>();
 }
 
 private void FixedUpdate()
 {
     // Apply in the physics step
-    m_rigidbody.AddForce(new Vector3(m_moveInput.x, 0f, m_moveInput.y) * m_moveSpeed);
+    _rigidbody.AddForce(new Vector3(_moveInput.x, 0f, _moveInput.y) * _moveSpeed);
 }
 ```
 
@@ -271,27 +271,27 @@ private void FixedUpdate()
 - ✅ Persist with `SaveBindingOverridesAsJson` / `LoadBindingOverridesFromJson`.
 
 ```csharp
-private InputActionRebindingExtensions.RebindingOperation m_rebindOperation;
+private InputActionRebindingExtensions.RebindingOperation _rebindOperation;
 
 public void StartRebind(InputAction action, int bindingIndex, Action onComplete)
 {
     action.Disable();   // Otherwise the rebind keypress also fires the action
 
-    m_rebindOperation = action.PerformInteractiveRebinding(bindingIndex)
+    _rebindOperation = action.PerformInteractiveRebinding(bindingIndex)
         .WithControlsExcluding("<Mouse>/position")
         .WithControlsExcluding("<Mouse>/delta")
         .WithCancelingThrough("<Keyboard>/escape")
         .OnComplete(operation =>
         {
             operation.Dispose();          // Unmanaged - always dispose
-            m_rebindOperation = null;
+            _rebindOperation = null;
             action.Enable();
             onComplete?.Invoke();
         })
         .OnCancel(operation =>
         {
             operation.Dispose();
-            m_rebindOperation = null;
+            _rebindOperation = null;
             action.Enable();
         })
         .Start();
@@ -299,7 +299,7 @@ public void StartRebind(InputAction action, int bindingIndex, Action onComplete)
 
 private void OnDestroy()
 {
-    m_rebindOperation?.Dispose();
+    _rebindOperation?.Dispose();
 }
 ```
 

@@ -181,8 +181,8 @@ public class NonDrawingGraphic : Graphic
 private void Start()
 {
     PopulateSlots();
-    LayoutRebuilder.ForceRebuildLayoutImmediate(m_contentRect);
-    m_layoutGroup.enabled = false;   // No further layout passes
+    LayoutRebuilder.ForceRebuildLayoutImmediate(_contentRect);
+    _layoutGroup.enabled = false;    // No further layout passes
 }
 ```
 
@@ -244,14 +244,14 @@ private async Awaitable FadeInAsync(CanvasGroup group, float duration, Cancellat
 - ⚠️ Assigning `.text` dirties the mesh even if the string is identical. Guard it:
 
 ```csharp
-private int m_lastScore = -1;
+private int _lastScore = -1;
 
 private void UpdateScore(int score)
 {
-    if (score == m_lastScore) return;   // Skip the rebuild entirely
+    if (score == _lastScore) return;    // Skip the rebuild entirely
 
-    m_lastScore = score;
-    m_scoreLabel.text = score.ToString();
+    _lastScore = score;
+    _scoreLabel.text = score.ToString();
 }
 ```
 
@@ -296,40 +296,40 @@ These follow the same rules as the rest of the codebase — see the
 [RequireComponent(typeof(Button))]
 public class ItemSlotView : MonoBehaviour
 {
-    [SerializeField] private Image m_icon;
-    [SerializeField] private TextMeshProUGUI m_countLabel;
+    [SerializeField] private Image _icon;
+    [SerializeField] private TextMeshProUGUI _countLabel;
 
-    private Button m_button;
-    private ItemDataSO m_item;
+    private Button _button;
+    private ItemConfig _item;
 
-    public event Action<ItemDataSO> Clicked;
+    public event Action<ItemConfig> Clicked;
 
     private void Awake()
     {
-        m_button = GetComponent<Button>();
+        _button = GetComponent<Button>();
     }
 
     private void OnEnable()
     {
-        m_button.onClick.AddListener(HandleClicked);
+        _button.onClick.AddListener(HandleClicked);
     }
 
     private void OnDisable()
     {
         // Essential for pooled rows - otherwise listeners stack up on reuse
-        m_button.onClick.RemoveListener(HandleClicked);
+        _button.onClick.RemoveListener(HandleClicked);
     }
 
-    public void Bind(ItemDataSO item, int count)
+    public void Bind(ItemConfig item, int count)
     {
-        m_item = item;
-        m_icon.sprite = item.Icon;
-        m_countLabel.text = count.ToString();
+        _item = item;
+        _icon.sprite = item.Icon;
+        _countLabel.text = count.ToString();
     }
 
     private void HandleClicked()
     {
-        Clicked?.Invoke(m_item);
+        Clicked?.Invoke(_item);
     }
 }
 ```

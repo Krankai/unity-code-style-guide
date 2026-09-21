@@ -54,17 +54,17 @@ public static class PlayerAnimatorParams
 [RequireComponent(typeof(Animator))]
 public class PlayerAnimatorDriver : MonoBehaviour
 {
-    private Animator m_animator;
+    private Animator _animator;
 
     private void Awake()
     {
-        m_animator = GetComponent<Animator>();
+        _animator = GetComponent<Animator>();
     }
 
     public void SetMovement(float speed, bool isGrounded)
     {
-        m_animator.SetFloat(PlayerAnimatorParams.Speed, speed);
-        m_animator.SetBool(PlayerAnimatorParams.IsGrounded, isGrounded);
+        _animator.SetFloat(PlayerAnimatorParams.Speed, speed);
+        _animator.SetBool(PlayerAnimatorParams.IsGrounded, isGrounded);
     }
 }
 ```
@@ -85,11 +85,11 @@ public class PlayerAnimatorDriver : MonoBehaviour
 
 ```csharp
 // ❌ Two scripts writing the same parameter - last writer per frame wins, unpredictably
-// PlayerMovement.cs:  m_animator.SetFloat(Speed, m_velocity.magnitude);
-// PlayerCombat.cs:    m_animator.SetFloat(Speed, 0f);
+// PlayerMovement.cs:  _animator.SetFloat(Speed, _velocity.magnitude);
+// PlayerCombat.cs:    _animator.SetFloat(Speed, 0f);
 
 // ✅ One driver, fed by both systems
-public void SetMovement(float speed) => m_animator.SetFloat(PlayerAnimatorParams.Speed, speed, 0.1f, Time.deltaTime);
+public void SetMovement(float speed) => _animator.SetFloat(PlayerAnimatorParams.Speed, speed, 0.1f, Time.deltaTime);
 ```
 
 ---
@@ -113,8 +113,8 @@ public void SetMovement(float speed) => m_animator.SetFloat(PlayerAnimatorParams
 public void Jump()
 {
     // Clear any stale queued jump before setting a fresh one
-    m_animator.ResetTrigger(PlayerAnimatorParams.JumpTrigger);
-    m_animator.SetTrigger(PlayerAnimatorParams.JumpTrigger);
+    _animator.ResetTrigger(PlayerAnimatorParams.JumpTrigger);
+    _animator.SetTrigger(PlayerAnimatorParams.JumpTrigger);
 }
 ```
 
@@ -134,7 +134,7 @@ public void Jump()
 
 ```csharp
 // Blend to a state over 0.1 real seconds, regardless of clip length
-m_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
+_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
 ```
 
 - ✅ **Interruption Source** on a transition controls whether it can be cut short. Default is `None`,
@@ -189,20 +189,20 @@ m_animator.CrossFadeInFixedTime(PlayerAnimatorStates.Attack, 0.1f);
 [RequireComponent(typeof(Animator))]
 public class PlayerAnimationEvents : MonoBehaviour
 {
-    [SerializeField] private WeaponHitbox m_hitbox;
-    [SerializeField] private FootstepPlayer m_footsteps;
+    [SerializeField] private WeaponHitbox _hitbox;
+    [SerializeField] private FootstepPlayer _footsteps;
 
     #region Animation Event Methods
     // Called from the attack clip on the contact frame
     public void OnAttackContact()
     {
-        m_hitbox.EnableForWindow();
+        _hitbox.EnableForWindow();
     }
 
     // Called from locomotion clips; int selects the foot
     public void OnFootstep(int footIndex)
     {
-        m_footsteps.Play(footIndex);
+        _footsteps.Play(footIndex);
     }
     #endregion
 }
@@ -221,9 +221,9 @@ public class PlayerAnimationEvents : MonoBehaviour
   the indexer overload rebuilds the table on every assignment.
 
 ```csharp
-private void ApplyWeaponAnimations(WeaponDataSO weapon)
+private void ApplyWeaponAnimations(WeaponConfig weapon)
 {
-    var overrideController = new AnimatorOverrideController(m_baseController);
+    var overrideController = new AnimatorOverrideController(_baseController);
 
     var overrides = new List<KeyValuePair<AnimationClip, AnimationClip>>(overrideController.overridesCount);
     overrideController.GetOverrides(overrides);
@@ -238,7 +238,7 @@ private void ApplyWeaponAnimations(WeaponDataSO weapon)
     }
 
     overrideController.ApplyOverrides(overrides);   // One rebuild, not one per clip
-    m_animator.runtimeAnimatorController = overrideController;
+    _animator.runtimeAnimatorController = overrideController;
 }
 ```
 
@@ -260,11 +260,11 @@ private void OnAnimatorMove()
 {
     // Take the animation's intended motion, apply it through the CharacterController
     // so collision is still respected.
-    Vector3 delta = m_animator.deltaPosition;
-    delta.y = m_verticalVelocity * Time.deltaTime;   // Gravity stays ours
+    Vector3 delta = _animator.deltaPosition;
+    delta.y = _verticalVelocity * Time.deltaTime;    // Gravity stays ours
 
-    m_characterController.Move(delta);
-    transform.rotation *= m_animator.deltaRotation;
+    _characterController.Move(delta);
+    transform.rotation *= _animator.deltaRotation;
 }
 ```
 
@@ -299,16 +299,16 @@ controller. Unity does not warn about this.
 // Diagnostic: dump the Animator's actual state
 private void LogAnimatorState()
 {
-    Debug.Log($"Controller: {m_animator.runtimeAnimatorController?.name ?? "NONE"}", this);
-    Debug.Log($"Enabled: {m_animator.enabled}, Speed: {m_animator.speed}, " +
-              $"Culling: {m_animator.cullingMode}");
+    Debug.Log($"Controller: {_animator.runtimeAnimatorController?.name ?? "NONE"}", this);
+    Debug.Log($"Enabled: {_animator.enabled}, Speed: {_animator.speed}, " +
+              $"Culling: {_animator.cullingMode}");
 
-    foreach (AnimatorControllerParameter p in m_animator.parameters)
+    foreach (AnimatorControllerParameter p in _animator.parameters)
     {
         Debug.Log($"  param '{p.name}' ({p.type})");   // Compare against your constants
     }
 
-    AnimatorStateInfo state = m_animator.GetCurrentAnimatorStateInfo(0);
+    AnimatorStateInfo state = _animator.GetCurrentAnimatorStateInfo(0);
     Debug.Log($"  layer 0 state hash {state.shortNameHash}, normalized time {state.normalizedTime:F2}");
 }
 ```

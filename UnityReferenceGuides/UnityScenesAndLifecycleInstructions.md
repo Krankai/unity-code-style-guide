@@ -36,16 +36,16 @@ Table of contents:
 ```csharp
 public class Bootstrapper : MonoBehaviour
 {
-    private const string k_bootstrapSceneName = "Bootstrap";
+    private const string BootstrapSceneName = "Bootstrap";
 
     // Runs before the first scene's Awake, in builds and in the Editor
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void EnsureBootstrapLoaded()
     {
-        if (SceneManager.GetSceneByName(k_bootstrapSceneName).isLoaded) return;
+        if (SceneManager.GetSceneByName(BootstrapSceneName).isLoaded) return;
 
         // Entered play mode on a gameplay scene - pull the bootstrap in behind it
-        SceneManager.LoadScene(k_bootstrapSceneName, LoadSceneMode.Additive);
+        SceneManager.LoadScene(BootstrapSceneName, LoadSceneMode.Additive);
     }
 }
 ```
@@ -77,7 +77,7 @@ public async Awaitable LoadLevelAsync(string sceneName, CancellationToken token)
     // 0.9 is "loaded but not activated" - it will not reach 1.0 until we allow activation
     while (load.progress < 0.9f)
     {
-        m_progressBar.value = load.progress / 0.9f;
+        _progressBar.value = load.progress / 0.9f;
         await Awaitable.NextFrameAsync(token);
 
         if (this == null) return;
@@ -145,8 +145,8 @@ every Play. The cost is that **static state no longer resets**.
 ```csharp
 public class GameSession
 {
-    private static int s_score;
-    private static readonly List<Player> s_players = new();
+    private static int _score;
+    private static readonly List<Player> Players = new();
 
     public static event Action<int> ScoreChanged;
 
@@ -154,8 +154,8 @@ public class GameSession
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetStatics()
     {
-        s_score = 0;
-        s_players.Clear();
+        _score = 0;
+        Players.Clear();
         ScoreChanged = null;   // Critical - otherwise last session's handlers survive
     }
 }
@@ -181,18 +181,18 @@ public class GameSession
 ```csharp
 public class AudioService : MonoBehaviour
 {
-    private static AudioService s_instance;
+    private static AudioService _instance;
 
     private void Awake()
     {
         // A reload of this scene would otherwise create a duplicate
-        if (s_instance != null && s_instance != this)
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
 
-        s_instance = this;
+        _instance = this;
         DontDestroyOnLoad(gameObject);
     }
 }
@@ -237,14 +237,14 @@ private void OnApplicationPause(bool isPaused)
     // On mobile this is the last reliable chance to persist state
     if (isPaused)
     {
-        m_saveService.SaveNow();
+        _saveService.SaveNow();
     }
 }
 
 private void OnApplicationQuit()
 {
     // Desktop, and graceful mobile exits only
-    m_saveService.SaveNow();
+    _saveService.SaveNow();
 }
 ```
 

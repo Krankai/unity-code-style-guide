@@ -91,24 +91,24 @@ private void Update()
 // ✅ Good - zero allocations, no scene scan
 // There is no non-allocating Find overload. The fix is not a better Find,
 // it is not calling Find at all: have enemies register themselves.
-private readonly List<Enemy> m_activeEnemies = new(100);   // Populated by Enemy.OnEnable/OnDisable
-private readonly List<Enemy> m_nearbyEnemies = new(50);
-private readonly StringBuilder m_statusBuilder = new(64);
+private readonly List<Enemy> _activeEnemies = new(100);    // Populated by Enemy.OnEnable/OnDisable
+private readonly List<Enemy> _nearbyEnemies = new(50);
+private readonly StringBuilder _statusBuilder = new(64);
 
 private void Update()
 {
-    m_nearbyEnemies.Clear();                            // Reuses list
+    _nearbyEnemies.Clear();                             // Reuses list
 
-    for (int i = 0; i < m_activeEnemies.Count; i++)
+    for (int i = 0; i < _activeEnemies.Count; i++)
     {
-        if (m_activeEnemies[i].IsAlive)
+        if (_activeEnemies[i].IsAlive)
         {
-            m_nearbyEnemies.Add(m_activeEnemies[i]);
+            _nearbyEnemies.Add(_activeEnemies[i]);
         }
     }
 
-    m_statusBuilder.Clear();                            // Reuses StringBuilder
-    m_statusBuilder.Append("Enemies: ").Append(m_nearbyEnemies.Count);
+    _statusBuilder.Clear();                             // Reuses StringBuilder
+    _statusBuilder.Append("Enemies: ").Append(_nearbyEnemies.Count);
 }
 ```
 
@@ -124,31 +124,31 @@ private void Update()
 private void Update()
 {
     Vector3 pos = transform.position;                   // Property access overhead
-    Vector3 targetDir = (m_target.transform.position - pos).normalized;
-    float distance = Vector3.Distance(transform.position, m_target.transform.position);
+    Vector3 targetDir = (_target.transform.position - pos).normalized;
+    float distance = Vector3.Distance(transform.position, _target.transform.position);
 }
 
 // ✅ Good - cached references and calculations
-private Transform m_transform;
-private Transform m_targetTransform;
-private Vector3 m_cachedTargetDirection;
-private float m_cachedDistance;
-private bool m_isDirty = true;
+private Transform _transform;
+private Transform _targetTransform;
+private Vector3 _cachedTargetDirection;
+private float _cachedDistance;
+private bool _isDirty = true;
 
 private void Awake()
 {
-    m_transform = transform;                            // Cache once
-    m_targetTransform = m_target.transform;
+    _transform = transform;                             // Cache once
+    _targetTransform = _target.transform;
 }
 
 private void Update()
 {
-    if (m_isDirty)
+    if (_isDirty)
     {
-        Vector3 offset = m_targetTransform.position - m_transform.position;
-        m_cachedDistance = offset.magnitude;
-        m_cachedTargetDirection = offset / m_cachedDistance; // Avoid double sqrt
-        m_isDirty = false;
+        Vector3 offset = _targetTransform.position - _transform.position;
+        _cachedDistance = offset.magnitude;
+        _cachedTargetDirection = offset / _cachedDistance; // Avoid double sqrt
+        _isDirty = false;
     }
 }
 ```
@@ -162,31 +162,31 @@ private void Update()
 
 ```csharp
 // ✅ Good - throttled updates
-[SerializeField] private float m_updateInterval = 0.1f;
-private float m_nextUpdateTime;
+[SerializeField] private float _updateInterval = 0.1f;
+private float _nextUpdateTime;
 
 private void Update()
 {
-    if (Time.time < m_nextUpdateTime) return;           // Skip until interval
+    if (Time.time < _nextUpdateTime) return;            // Skip until interval
     
-    m_nextUpdateTime = Time.time + m_updateInterval;
+    _nextUpdateTime = Time.time + _updateInterval;
     PerformExpensiveOperation();
 }
 
 // ✅ Good - staggered processing across frames
-private int m_currentIndex;
-private const int k_itemsPerFrame = 10;
+private int _currentIndex;
+private const int ItemsPerFrame = 10;
 
 private void Update()
 {
-    int endIndex = Mathf.Min(m_currentIndex + k_itemsPerFrame, m_items.Count);
+    int endIndex = Mathf.Min(_currentIndex + ItemsPerFrame, _items.Count);
     
-    for (int i = m_currentIndex; i < endIndex; i++)
+    for (int i = _currentIndex; i < endIndex; i++)
     {
-        ProcessItem(m_items[i]);
+        ProcessItem(_items[i]);
     }
     
-    m_currentIndex = endIndex >= m_items.Count ? 0 : endIndex;
+    _currentIndex = endIndex >= _items.Count ? 0 : endIndex;
 }
 ```
 
@@ -206,25 +206,25 @@ private void Update()
 // ❌ Bad - multiple allocations
 private void UpdateUI()
 {
-    m_scoreText.text = "Score: " + m_score;                     // 2 allocations
-    m_healthText.text = string.Format("HP: {0}/{1}", m_hp, m_maxHp); // Allocates
+    _scoreText.text = "Score: " + _score;                       // 2 allocations
+    _healthText.text = string.Format("HP: {0}/{1}", _hp, _maxHp); // Allocates
 }
 
 // ✅ Good - cached and pooled
-private readonly StringBuilder m_sb = new(32);
-private int m_lastScore = -1;
-private string m_cachedScoreText;
+private readonly StringBuilder _sb = new(32);
+private int _lastScore = -1;
+private string _cachedScoreText;
 
 private void UpdateUI()
 {
-    if (m_score != m_lastScore)
+    if (_score != _lastScore)
     {
-        m_sb.Clear();
-        m_sb.Append("Score: ").Append(m_score);
-        m_cachedScoreText = m_sb.ToString();                    // Only allocate on change
-        m_lastScore = m_score;
+        _sb.Clear();
+        _sb.Append("Score: ").Append(_score);
+        _cachedScoreText = _sb.ToString();                      // Only allocate on change
+        _lastScore = _score;
     }
-    m_scoreText.text = m_cachedScoreText;
+    _scoreText.text = _cachedScoreText;
 }
 ```
 
@@ -245,7 +245,7 @@ private void ProcessEnemies()
 }
 
 // ✅ Good - pre-sized capacity
-private readonly List<Enemy> m_enemies = new(100);     // Expected max capacity
+private readonly List<Enemy> _enemies = new(100);      // Expected max capacity
 
 // ✅ Good - using Unity's pooling
 using UnityEngine.Pool;
@@ -312,29 +312,29 @@ using UnityEngine.Pool;
 
 public class ProjectilePool : MonoBehaviour
 {
-    [SerializeField] private Projectile m_prefab;
-    [SerializeField] private int m_defaultCapacity = 20;
-    [SerializeField] private int m_maxSize = 100;
+    [SerializeField] private Projectile _prefab;
+    [SerializeField] private int _defaultCapacity = 20;
+    [SerializeField] private int _maxSize = 100;
     
-    private ObjectPool<Projectile> m_pool;
+    private ObjectPool<Projectile> _pool;
 
     private void Awake()
     {
-        m_pool = new ObjectPool<Projectile>(
+        _pool = new ObjectPool<Projectile>(
             createFunc: CreateProjectile,
             actionOnGet: OnGetFromPool,
             actionOnRelease: OnReturnToPool,
             actionOnDestroy: OnDestroyPooled,
             collectionCheck: false,                     // Disable in release for perf
-            defaultCapacity: m_defaultCapacity,
-            maxSize: m_maxSize
+            defaultCapacity: _defaultCapacity,
+            maxSize: _maxSize
         );
     }
 
     private Projectile CreateProjectile()
     {
-        var proj = Instantiate(m_prefab);
-        proj.SetPool(m_pool);                           // Give projectile pool reference
+        var proj = Instantiate(_prefab);
+        proj.SetPool(_pool);                            // Give projectile pool reference
         return proj;
     }
 
@@ -354,8 +354,8 @@ public class ProjectilePool : MonoBehaviour
         Destroy(proj.gameObject);
     }
 
-    public Projectile Get() => m_pool.Get();
-    public void Return(Projectile proj) => m_pool.Release(proj);
+    public Projectile Get() => _pool.Get();
+    public void Return(Projectile proj) => _pool.Release(proj);
 }
 ```
 
@@ -377,7 +377,7 @@ tunnelling — lives in [Physics](UnityPhysicsInstructions.md).
 // ❌ Bad - allocating physics query every frame
 private void Update()
 {
-    Collider[] hits = Physics.OverlapSphere(transform.position, m_radius);
+    Collider[] hits = Physics.OverlapSphere(transform.position, _radius);
     foreach (var hit in hits)
     {
         // Process...
@@ -385,26 +385,26 @@ private void Update()
 }
 
 // ✅ Good - non-allocating with cached arrays and layer mask
-private readonly Collider[] m_hitBuffer = new Collider[32];
-private LayerMask m_enemyLayer;
+private readonly Collider[] _hitBuffer = new Collider[32];
+private LayerMask _enemyLayer;
 
 private void Awake()
 {
-    m_enemyLayer = LayerMask.GetMask("Enemy");          // Cache layer mask
+    _enemyLayer = LayerMask.GetMask("Enemy");           // Cache layer mask
 }
 
 private void FixedUpdate()
 {
     int hitCount = Physics.OverlapSphereNonAlloc(
         transform.position, 
-        m_radius, 
-        m_hitBuffer,
-        m_enemyLayer                                     // Only check enemy layer
+        _radius, 
+        _hitBuffer,
+        _enemyLayer                                      // Only check enemy layer
     );
     
     for (int i = 0; i < hitCount; i++)
     {
-        ProcessHit(m_hitBuffer[i]);
+        ProcessHit(_hitBuffer[i]);
     }
 }
 ```
@@ -417,17 +417,17 @@ private void FixedUpdate()
 
 ```csharp
 // ✅ Good - optimized raycast
-private RaycastHit m_hitInfo;
-private const float k_maxRayDistance = 100f;
+private RaycastHit _hitInfo;
+private const float MaxRayDistance = 100f;
 
 private bool CheckLineOfSight(Vector3 origin, Vector3 direction)
 {
     return Physics.Raycast(
         origin,
         direction,
-        out m_hitInfo,
-        k_maxRayDistance,
-        m_lineOfSightMask,
+        out _hitInfo,
+        MaxRayDistance,
+        _lineOfSightMask,
         QueryTriggerInteraction.Ignore
     );
 }
@@ -439,7 +439,7 @@ private bool CheckLineOfSight(Vector3 origin, Vector3 direction)
 
 - ⚠️ Accessing `.material` creates a material instance — use `.sharedMaterial` when possible.
 - ⚠️ **The instance `.material` creates is a leak.** Unity does not destroy it with the GameObject.
-  If you take `.material`, you own it: `Destroy(m_renderer.material)` in `OnDestroy`. On pooled
+  If you take `.material`, you own it: `Destroy(_renderer.material)` in `OnDestroy`. On pooled
   objects that touch `.material` per spawn, this is a steady leak.
 - ⚠️ Writing to `.sharedMaterial` edits the material **asset**. In the Editor the change persists
   after exiting play mode, and every renderer using that material changes with it.
@@ -469,21 +469,21 @@ private void Start()
 }
 
 // ✅ Good - uses MaterialPropertyBlock (no allocation after first call)
-private static readonly int s_baseColorId = Shader.PropertyToID("_BaseColor");
-private MaterialPropertyBlock m_propertyBlock;
-private Renderer m_renderer;
+private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+private MaterialPropertyBlock _propertyBlock;
+private Renderer _renderer;
 
 private void Awake()
 {
-    m_renderer = GetComponent<Renderer>();
-    m_propertyBlock = new MaterialPropertyBlock();
+    _renderer = GetComponent<Renderer>();
+    _propertyBlock = new MaterialPropertyBlock();
 }
 
 private void SetColor(Color color)
 {
-    m_renderer.GetPropertyBlock(m_propertyBlock);
-    m_propertyBlock.SetColor(s_baseColorId, color);
-    m_renderer.SetPropertyBlock(m_propertyBlock);
+    _renderer.GetPropertyBlock(_propertyBlock);
+    _propertyBlock.SetColor(BaseColorId, color);
+    _renderer.SetPropertyBlock(_propertyBlock);
 }
 ```
 
@@ -497,14 +497,14 @@ private void SetColor(Color color)
 
 ```csharp
 // ❌ Bad - string lookup every call
-m_material.SetFloat("_Intensity", value);
+_material.SetFloat("_Intensity", value);
 
 // ✅ Good - cached ID
-private static readonly int s_intensityId = Shader.PropertyToID("_Intensity");
+private static readonly int IntensityId = Shader.PropertyToID("_Intensity");
 
 private void UpdateShader(float value)
 {
-    m_material.SetFloat(s_intensityId, value);
+    _material.SetFloat(IntensityId, value);
 }
 ```
 
@@ -536,25 +536,25 @@ private void Update()
 }
 
 // ✅ Good - cached references
-[SerializeField] private Rigidbody m_rigidbody;
-[SerializeField] private Player m_player;
-private Transform m_cachedTransform;
+[SerializeField] private Rigidbody _rigidbody;
+[SerializeField] private Player _player;
+private Transform _cachedTransform;
 
 private void Awake()
 {
-    m_cachedTransform = transform;
+    _cachedTransform = transform;
     
     // Cache if not assigned in Inspector
-    if (m_rigidbody == null)
+    if (_rigidbody == null)
     {
-        TryGetComponent(out m_rigidbody);
+        TryGetComponent(out _rigidbody);
     }
 }
 
 private void Update()
 {
     // Use cached references
-    m_rigidbody.AddForce(Vector3.up);
+    _rigidbody.AddForce(Vector3.up);
 }
 ```
 
@@ -567,14 +567,14 @@ private void Update()
 [RequireComponent(typeof(Collider))]
 public class PhysicsController : MonoBehaviour
 {
-    private Rigidbody m_rigidbody;
-    private Collider m_collider;
+    private Rigidbody _rigidbody;
+    private Collider _collider;
 
     private void Awake()
     {
         // Safe to cache — RequireComponent guarantees existence
-        m_rigidbody = GetComponent<Rigidbody>();
-        m_collider = GetComponent<Collider>();
+        _rigidbody = GetComponent<Rigidbody>();
+        _collider = GetComponent<Collider>();
     }
 }
 ```
@@ -593,31 +593,31 @@ public class PhysicsController : MonoBehaviour
 // ❌ Bad - LINQ allocations in Update
 private void Update()
 {
-    var activeEnemies = m_enemies.Where(e => e.IsActive).ToList();
-    var closestEnemy = m_enemies.OrderBy(e => e.Distance).FirstOrDefault();
+    var activeEnemies = _enemies.Where(e => e.IsActive).ToList();
+    var closestEnemy = _enemies.OrderBy(e => e.Distance).FirstOrDefault();
 }
 
 // ✅ Good - explicit loops, no allocations
-private Enemy m_closestEnemy;
-private readonly List<Enemy> m_activeEnemies = new(50);
+private Enemy _closestEnemy;
+private readonly List<Enemy> _activeEnemies = new(50);
 
 private void Update()
 {
-    m_activeEnemies.Clear();
+    _activeEnemies.Clear();
     float minDistance = float.MaxValue;
-    m_closestEnemy = null;
+    _closestEnemy = null;
     
-    for (int i = 0; i < m_enemies.Count; i++)
+    for (int i = 0; i < _enemies.Count; i++)
     {
-        var enemy = m_enemies[i];
+        var enemy = _enemies[i];
         if (enemy.IsActive)
         {
-            m_activeEnemies.Add(enemy);
+            _activeEnemies.Add(enemy);
             
             if (enemy.Distance < minDistance)
             {
                 minDistance = enemy.Distance;
-                m_closestEnemy = enemy;
+                _closestEnemy = enemy;
             }
         }
     }
@@ -630,13 +630,13 @@ private void Update()
 // ❌ Bad - creates delegate instance each time
 private void OnEnable()
 {
-    m_button.clicked += () => OnButtonClicked();       // Allocates closure
+    _button.clicked += () => OnButtonClicked();        // Allocates closure
 }
 
 // ✅ Good - cached method reference
 private void OnEnable()
 {
-    m_button.clicked += OnButtonClicked;               // Method group, no allocation
+    _button.clicked += OnButtonClicked;                // Method group, no allocation
 }
 
 private void OnButtonClicked()
@@ -667,13 +667,13 @@ private IEnumerator BadCoroutine()
 }
 
 // ✅ Good - cached wait object
-private readonly WaitForSeconds m_shortWait = new(0.1f);
+private readonly WaitForSeconds _shortWait = new(0.1f);
 
 private IEnumerator GoodCoroutine()
 {
     while (true)
     {
-        yield return m_shortWait;                       // Reuses cached object
+        yield return _shortWait;                        // Reuses cached object
         DoSomething();
     }
 }
@@ -708,22 +708,22 @@ private async Awaitable PeriodicUpdateAsync(CancellationToken token)
 // Choose the right data structure for the operation
 
 // O(1) lookup by ID
-private Dictionary<int, Enemy> m_enemyById = new();
+private Dictionary<int, Enemy> _enemyById = new();
 
 // O(1) membership check
-private HashSet<int> m_processedIds = new();
+private HashSet<int> _processedIds = new();
 
 // Ordered iteration, dynamic size
-private List<Enemy> m_activeEnemies = new();
+private List<Enemy> _activeEnemies = new();
 
 // Fixed size, frequent access
-private Enemy[] m_enemyPool = new Enemy[100];
+private Enemy[] _enemyPool = new Enemy[100];
 
 // Command queue
-private Queue<ICommand> m_commandQueue = new();
+private Queue<ICommand> _commandQueue = new();
 
 // Undo stack
-private Stack<ICommand> m_undoStack = new();
+private Stack<ICommand> _undoStack = new();
 ```
 
 ---
@@ -778,16 +778,16 @@ private void Update()
 }
 
 // ✅ Good - cached reference
-private Camera m_mainCamera;
+private Camera _mainCamera;
 
 private void Awake()
 {
-    m_mainCamera = Camera.main;
+    _mainCamera = Camera.main;
 }
 
 private void Update()
 {
-    Vector3 screenPos = m_mainCamera.WorldToScreenPoint(transform.position);
+    Vector3 screenPos = _mainCamera.WorldToScreenPoint(transform.position);
 }
 ```
 
@@ -804,15 +804,15 @@ using Unity.Profiling;
 
 public class PerformanceCriticalSystem : MonoBehaviour
 {
-    private static readonly ProfilerMarker s_updateMarker = 
+    private static readonly ProfilerMarker UpdateMarker = 
         new ProfilerMarker("PerformanceCriticalSystem.Update");
     
-    private static readonly ProfilerMarker s_processEnemiesMarker = 
+    private static readonly ProfilerMarker ProcessEnemiesMarker = 
         new ProfilerMarker("PerformanceCriticalSystem.ProcessEnemies");
 
     private void Update()
     {
-        using (s_updateMarker.Auto())
+        using (UpdateMarker.Auto())
         {
             ProcessEnemies();
             UpdateUI();
@@ -821,7 +821,7 @@ public class PerformanceCriticalSystem : MonoBehaviour
 
     private void ProcessEnemies()
     {
-        using (s_processEnemiesMarker.Auto())
+        using (ProcessEnemiesMarker.Auto())
         {
             // Expensive processing...
         }
@@ -906,26 +906,26 @@ private void Update()
 {
     var job = new MoveTowardsJob
     {
-        Targets = m_targets,
-        Positions = m_positions,
+        Targets = _targets,
+        Positions = _positions,
         DeltaTime = Time.deltaTime,
-        Speed = m_speed
+        Speed = _speed
     };
 
     // 64 = batch size; tune it, don't guess once and forget
-    m_handle = job.Schedule(m_positions.Length, 64);
+    _handle = job.Schedule(_positions.Length, 64);
 }
 
 private void LateUpdate()
 {
-    m_handle.Complete();   // Complete as late as possible
+    _handle.Complete();    // Complete as late as possible
 }
 
 private void OnDestroy()
 {
     // NativeArrays are not garbage collected
-    if (m_positions.IsCreated) m_positions.Dispose();
-    if (m_targets.IsCreated) m_targets.Dispose();
+    if (_positions.IsCreated) _positions.Dispose();
+    if (_targets.IsCreated) _targets.Dispose();
 }
 ```
 
@@ -1086,11 +1086,11 @@ void Update()
 // 🟢 Preferred patterns
 void Update()
 {
-    m_cachedComponent                    // 🟢 Cached reference
-    m_cachedList.Clear()                 // 🟢 Reused collection
-    m_stringBuilder.Clear().Append()     // 🟢 Reused builder
+    _cachedComponent                     // 🟢 Cached reference
+    _cachedList.Clear()                  // 🟢 Reused collection
+    _stringBuilder.Clear().Append()      // 🟢 Reused builder
     for (int i = 0; i < count; i++)      // 🟢 Explicit loop
-    m_cachedCamera                       // 🟢 Cached reference
+    _cachedCamera                        // 🟢 Cached reference
     Physics.OverlapSphereNonAlloc()      // 🟢 Non-allocating
 }
 ```

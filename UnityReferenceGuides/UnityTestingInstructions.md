@@ -128,31 +128,31 @@ This is the part that pays off whether or not you write the tests.
 // ❌ Hard to test - needs a GameObject, a scene, and real time
 public class Health : MonoBehaviour
 {
-    [SerializeField] private int m_max = 100;
-    private int m_current;
+    [SerializeField] private int _max = 100;
+    private int _current;
 
     public void ApplyDamage(int amount, ArmourType armour)
     {
         float multiplier = armour == ArmourType.Heavy ? 0.5f : 1f;
-        m_current -= Mathf.RoundToInt(amount * multiplier);
+        _current -= Mathf.RoundToInt(amount * multiplier);
 
-        if (m_current <= 0) GameManager.Instance.HandleDeath(gameObject);
+        if (_current <= 0) GameManager.Instance.HandleDeath(gameObject);
     }
 }
 
 // ✅ Testable - the rule lives in a plain class
 public class HealthPool
 {
-    private readonly int m_max;
-    private int m_current;
+    private readonly int _max;
+    private int _current;
 
-    public int Current => m_current;
-    public bool IsAlive => m_current > 0;
+    public int Current => _current;
+    public bool IsAlive => _current > 0;
 
     public HealthPool(int max)
     {
-        m_max = max;
-        m_current = max;
+        _max = max;
+        _current = max;
     }
 
     public void ApplyDamage(int amount, ArmourType armour)
@@ -160,27 +160,27 @@ public class HealthPool
         if (amount <= 0) return;
 
         float multiplier = armour == ArmourType.Heavy ? 0.5f : 1f;
-        m_current = Mathf.Max(0, m_current - Mathf.RoundToInt(amount * multiplier));
+        _current = Mathf.Max(0, _current - Mathf.RoundToInt(amount * multiplier));
     }
 }
 
 // The MonoBehaviour becomes a thin shell over it
 public class Health : MonoBehaviour
 {
-    [SerializeField] private int m_max = 100;
+    [SerializeField] private int _max = 100;
 
-    private HealthPool m_pool;
+    private HealthPool _pool;
 
     public event Action Died;
 
-    private void Awake() => m_pool = new HealthPool(m_max);
+    private void Awake() => _pool = new HealthPool(_max);
 
     public void ApplyDamage(int amount, ArmourType armour)
     {
-        bool wasAlive = m_pool.IsAlive;
-        m_pool.ApplyDamage(amount, armour);
+        bool wasAlive = _pool.IsAlive;
+        _pool.ApplyDamage(amount, armour);
 
-        if (wasAlive && !m_pool.IsAlive)
+        if (wasAlive && !_pool.IsAlive)
         {
             Died?.Invoke();
         }
@@ -228,12 +228,12 @@ public void ApplyDamage_ExceedingCurrentHealth_ClampsToZero()
 [TestFixture]
 public class DamageCalculatorTests
 {
-    private DamageCalculator m_calculator;
+    private DamageCalculator _calculator;
 
     [SetUp]
     public void SetUp()
     {
-        m_calculator = new DamageCalculator();
+        _calculator = new DamageCalculator();
     }
 
     [TestCase(100, ArmourType.None,  ExpectedResult = 100)]
@@ -241,7 +241,7 @@ public class DamageCalculatorTests
     [TestCase(100, ArmourType.Heavy, ExpectedResult = 50)]
     public int Calculate_ByArmourType_AppliesCorrectMultiplier(int raw, ArmourType armour)
     {
-        return m_calculator.Calculate(raw, armour);
+        return _calculator.Calculate(raw, armour);
     }
 }
 ```
@@ -314,11 +314,11 @@ public class UnityRandomSource : IRandomSource
 // Test double - deterministic, no engine dependency
 public class FixedRandomSource : IRandomSource
 {
-    private readonly float m_value;
+    private readonly float _value;
 
-    public FixedRandomSource(float value) => m_value = value;
+    public FixedRandomSource(float value) => _value = value;
 
-    public float NextFloat() => m_value;
+    public float NextFloat() => _value;
 }
 
 [Test]

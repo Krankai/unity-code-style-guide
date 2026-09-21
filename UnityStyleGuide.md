@@ -15,16 +15,17 @@ ones worth discussing before you adopt the guide wholesale:
 
 | Convention | My choice | Common alternative |
 |---|---|---|
-| Private field prefix | `m_camelCase` | `_camelCase` or bare `camelCase` |
-| Constant prefix | `k_camelCase` for private consts | `PascalCase` or `SCREAMING_CASE` |
-| Static field prefix | `s_camelCase` | no prefix |
+| Private field prefix | `_camelCase` | `m_camelCase` or bare `camelCase` |
+| Mutable static field prefix | `_camelCase`, same as instance fields | `s_camelCase` |
 | Brace style | Allman (brace on its own line) | K&R (brace on the same line) |
 | Line width | 120–140 characters | 80, 100, or unlimited |
 | `private` modifier | Always written, even though it's implicit | Omitted |
-| ScriptableObject naming | `DataSO` suffix | no suffix |
+| ScriptableObject naming | `Config` suffix | no suffix |
+| ScriptableObject menu path | `"<Category>/<Asset Name>"` | Unity default, or a flat menu |
+| Asset filenames | Folder-based, no type-tag prefixes | `T_`, `M_`, `SFX_` prefixes |
 | Method verbs | `Handle` for event callbacks, `Process` for game-flow logic | `On`, or no distinction |
 
-Everything else — PascalCase types and methods, `is`/`has`/`can` booleans, `I`-prefixed interfaces,
+Everything else — PascalCase types, methods and constants, `is`/`has`/`can` booleans, `I`-prefixed interfaces,
 caching in `Awake`, unsubscribing in `OnDisable` — is standard practice, not preference.
 
 > **Tech stack assumptions** (Unity version, render pipeline, input and UI system) live in
@@ -41,6 +42,7 @@ Table of contents:
   - [Using statements](#using-statements)
     - [Namespaces](#namespaces)
   - [Fields](#fields)
+  - [Constants and static readonly values](#constants-and-static-readonly-values)
   - [Properties](#properties)
   - [Events](#events)
     - [Subscribing and unsubscribing to events](#subscribing-and-unsubscribing-to-events)
@@ -154,7 +156,7 @@ if (itemCount < processingThreshold)
 }
 
 [Tooltip("Maximum distance the player can travel in one frame")]
-[SerializeField] private float m_maxDeltaMovement = 10f;
+[SerializeField] private float _maxDeltaMovement = 10f;
 
 /// <summary>
 /// Applies damage and raises <see cref="HealthChanged"/> if the value actually changed.
@@ -209,6 +211,9 @@ using MyGameProject.Utilities;
 - ✅ Use namespaces to ensure that your classes, interfaces, enums, etc., won't conflict with existing ones from other namespaces or the global namespace.
 - ✅ Use PascalCase, without special symbols or underscores.
 - ✅ Create sub-namespaces with the dot (`.`) operator, e.g., `MyApplication.GameFlow`, `MyApplication.AI`, etc.
+- ✅ Use a single-part root named after the product (`MyGame`), then one sub-namespace per feature folder. A script in `Characters/` lives in `MyGame.Characters`, so the namespace can always be worked out from the file's path.
+- ✅ Editor-only code takes an `.Editor` suffix on its namespace: `MyGame.Characters.Editor`.
+- ℹ️ Set `rootNamespace` on each assembly definition and Unity inserts the right namespace into new scripts. See [Assembly Definitions](UnityReferenceGuides/UnityAssemblyDefinitionsInstructions.md#rootnamespace).
 
 ```csharp
 namespace MyGame.Characters
@@ -218,52 +223,85 @@ namespace MyGame.Characters
         // Class implementation
     }
 }
+
+// Characters/Editor/PlayerEditor.cs - editor-only code gets the .Editor suffix
+namespace MyGame.Characters.Editor
+{
+    public class PlayerEditor : UnityEditor.Editor
+    {
+        // Custom inspector
+    }
+}
 ```
 
 ## Fields
 - ✅ Don't omit the `private` accessor even though it's technically implicit. It provides context about the intent.
-- ✅ Use `m_` for private fields, `k_` for private constants, and `s_` for static fields. All three use
-  **camelCase after the prefix** (`m_health`, `k_maxCount`, `s_sharedCount`).
-- ⚠️ **Exception:** `public const` members of a static lookup class are API surface, so they use
-  PascalCase without a prefix (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
-  The `k_` prefix is for private constants.
+- ✅ Use a `_` prefix with **camelCase** for private fields, including mutable static fields (`_health`, `_sharedCount`).
+- ✅ Use **PascalCase with no prefix** for constants and `static readonly` values, whatever their accessibility (`MaxCount`, `SpeedHash`).
+  Immutable values read as named data rather than state that can change. Static lookup classes follow the same rule
+  (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
 - ✅ Use descriptive names that clearly indicate the field's purpose.
 - ❌ Avoid abbreviations unless they are widely understood (e.g., `UI`, `ID`).
-- ✅ Include units in the name if applicable (e.g., `m_speedInMetersPerSecond`).
-- ✅ Prefix Boolean fields with verbs like `is`, `has`, or `can` for clarity (e.g., `m_isActive`, `m_hasPermission`).
-- ❌ Avoid redundancy by not repeating the class name in field names (e.g., use `m_health` instead of `m_playerHealth` in a `Player` class).
+- ✅ Include units in the name if applicable (e.g., `_speedInMetersPerSecond`).
+- ✅ Prefix Boolean fields with verbs like `is`, `has`, or `can` for clarity (e.g., `_isActive`, `_hasPermission`).
+- ❌ Avoid redundancy by not repeating the class name in field names (e.g., use `_health` instead of `_playerHealth` in a `Player` class).
 - ✅ Expose fields in the Inspector with `[SerializeField]`, keeping the field itself private.
 - ✅ Use properties when you need to access them from other classes.
 - ❌ Avoid redundant initializers. Value types default to `0` and reference types to `null`; writing
   that out adds noise.
 
 ```csharp
-// Use `m_` prefix for private fields
-private int m_health;
+// Use `_` prefix for private fields
+private int _health;
 
-// Static field with s_ prefix
-private static int s_sharedCount;
+// Mutable static field: same `_` prefix as instance fields
+private static int _sharedCount;
 
-// Private constant with k_ prefix
-private const int k_maxCount = 100;
+// Constants and static readonly values: PascalCase, no prefix
+private const int MaxCount = 100;
+private static readonly int SpeedHash = Animator.StringToHash("Speed");
 
 // Use [SerializeField] rather than exposing your field publicly; keep it private or make it a property
-[SerializeField] private int m_startingHealth;
+[SerializeField] private int _startingHealth;
 
 // Specify the unit used to eliminate guessing. Favor readability over brevity
-private int m_elapsedTimeInHours;
-private int m_elapsedTimeInDays;
-private int m_elapsedTimeInSeconds;
+private int _elapsedTimeInHours;
+private int _elapsedTimeInDays;
+private int _elapsedTimeInSeconds;
 
 // Prefix Booleans with a verb like "is" to make their meaning apparent
-[SerializeField] private bool m_isPlayerDead;
+[SerializeField] private bool _isPlayerDead;
+```
+
+### Constants and static readonly values
+- ✅ Name every constant in **PascalCase with no prefix**, whatever its accessibility: `private const int MaxRetries`, `public const string Player`. This is the standard C# convention, not a personal preference.
+- ✅ Name `static readonly` values the same way: cached hashes, shader property IDs, profiler markers and other values assigned once and never reassigned (`SpeedHash`, `BaseColorId`, `UpdateMarker`). They read as named data, not as state that can change.
+- ❌ Don't add a prefix (`k_maxRetries`) and don't use SCREAMING_CASE (`MAX_RETRIES`).
+- ✅ Static lookup classes for tags, layers and input action names follow the same rule (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
+- ⚠️ A static field that *does* change is state, not a constant. It takes the `_` prefix like any other field (`_instance`, `_score`) and needs a reset when Domain Reload is disabled. See [Domain reload and static state](UnityReferenceGuides/UnityScenesAndLifecycleInstructions.md#domain-reload-and-static-state).
+
+```csharp
+// Constants: PascalCase, no prefix, any accessibility
+private const int MaxRetries = 3;
+public const string Player = "Player";   // e.g. on a static lookup class: Tags.Player
+
+// static readonly values: PascalCase as well
+private static readonly int SpeedHash = Animator.StringToHash("Speed");
+private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+// Mutable static state: `_` prefix, same as instance fields
+private static int _score;
+
+// Avoid
+private const int k_maxRetries = 3;      // prefix
+private const int MAX_RETRIES = 3;       // SCREAMING_CASE
 ```
 
 ### Properties
 - ✅ Place properties after fields and before MonoBehaviour methods as per your class organization.
 - ✅ Use PascalCase for properties and avoid prefixes/suffixes.
 - ✅ Prefer predicate names for boolean properties (Is/Has/Can), e.g., `IsGrounded`, `HasHealthPack`, `CanJump`.
-- ❌ Don't try to serialize a property directly. Use `[SerializeField] private T m_field` plus a public
+- ❌ Don't try to serialize a property directly. Use `[SerializeField] private T _field` plus a public
   property that returns or validates it.
 - ✅ Use `[field: SerializeField]` on an auto-property when you want the Inspector field without writing
   a backing field by hand. It's the concise option — note the Inspector label will show the compiler-
@@ -277,16 +315,16 @@ private int m_elapsedTimeInSeconds;
 
 ```csharp
 // Private backing field
-private int m_maxHealth;
+private int _maxHealth;
 
 // Read-only property
-public int MaxHealthReadOnly => m_maxHealth;
+public int MaxHealthReadOnly => _maxHealth;
 
 // Property with full implementation
 public int MaxHealth
 {
-    get => m_maxHealth;
-    set => m_maxHealth = value;
+    get => _maxHealth;
+    set => _maxHealth = value;
 }
 
 // Auto-implemented property
@@ -300,7 +338,7 @@ public Vector2 MovementInput
 {
     set
     {
-        m_forwardMovementInput = value;
+        _forwardMovementInput = value;
         Debug.Log("Movement input set.");
     }
 }
@@ -364,12 +402,12 @@ public readonly struct DamageInfo
 ```csharp
 private void OnEnable()
 {
-    m_gameManager.DoorOpened += HandleDoorOpened;
+    _gameManager.DoorOpened += HandleDoorOpened;
 }
 
 private void OnDisable()
 {
-    m_gameManager.DoorOpened -= HandleDoorOpened;
+    _gameManager.DoorOpened -= HandleDoorOpened;
 }
 ```
 
@@ -385,7 +423,7 @@ private void OnDisable()
 private void Awake()
 {
     // Cache component references here
-    m_rigidbody = GetComponent<Rigidbody>();
+    _rigidbody = GetComponent<Rigidbody>();
 }
 ```
 
@@ -397,8 +435,8 @@ private void Awake()
 private void OnEnable()
 {
     // Subscribe here; the matching -= belongs in OnDisable()
-    m_inputActions.Player.Jump.performed += HandleJumpPerformed;
-    m_health.Died += HandleDied;
+    _inputActions.Player.Jump.performed += HandleJumpPerformed;
+    _health.Died += HandleDied;
 }
 ```
 
@@ -411,7 +449,7 @@ private void OnEnable()
 private void Start()
 {
     // Use cached references and perform operations that might depend on other components being initialized
-    m_animator.SetTrigger(k_initializeTrigger);
+    _animator.SetTrigger(InitializeTrigger);
 }
 ```
 
@@ -423,8 +461,8 @@ private void Start()
 private void OnDisable()
 {
     // Unsubscribe from events here to prevent memory leaks or unexpected behavior
-    m_inputActions.Player.Jump.performed -= HandleJumpPerformed;
-    m_health.Died -= HandleDied;
+    _inputActions.Player.Jump.performed -= HandleJumpPerformed;
+    _health.Died -= HandleDied;
 }
 ```
 
@@ -442,11 +480,11 @@ private void OnDisable()
 private void OnDestroy()
 {
     // Release resources the GC won't clean up for you
-    m_inputActions?.Dispose();
+    _inputActions?.Dispose();
 
-    if (m_renderTexture != null)
+    if (_renderTexture != null)
     {
-        m_renderTexture.Release();
+        _renderTexture.Release();
     }
 
     ServiceLocator.Unregister(this);
@@ -481,7 +519,7 @@ private void Update()
 {
     // Put all your regular frame logic update code in Update()
 
-    if (!m_isActive) return; // Early return pattern
+    if (!_isActive) return; // Early return pattern
 
     // Move logic to well-named methods
     HandleMovement();
@@ -499,9 +537,9 @@ private void Update()
 // Use LateUpdate for camera follow so it reads the player's final position for this frame
 private void LateUpdate()
 {
-    Vector3 targetPosition = m_target.position + m_followOffset;
-    transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref m_followVelocity, m_smoothTime);
-    transform.LookAt(m_target);
+    Vector3 targetPosition = _target.position + _followOffset;
+    transform.position = Vector3.SmoothDamp(transform.position, targetPosition, ref _followVelocity, _smoothTime);
+    transform.LookAt(_target);
 }
 ```
 
@@ -517,13 +555,13 @@ private void LateUpdate()
 private void Update()
 {
     // Bad - expensive operation every frame
-    var nearbyEnemies = Physics.OverlapSphere(transform.position, m_detectionRadius);
+    var nearbyEnemies = Physics.OverlapSphere(transform.position, _detectionRadius);
 
     // Better - cache and update less frequently
-    if (Time.time > m_nextUpdateTime)
+    if (Time.time > _nextUpdateTime)
     {
         UpdateNearbyEnemies();
-        m_nextUpdateTime = Time.time + m_updateInterval;
+        _nextUpdateTime = Time.time + _updateInterval;
     }
 }
 ```
@@ -542,16 +580,16 @@ public void ApplyDamage(int amount)
 {
     if (amount <= 0) return;
 
-    m_health = Mathf.Max(0, m_health - amount);
+    _health = Mathf.Max(0, _health - amount);
     OnDamageTaken(amount);
 
-    if (m_health == 0)
+    if (_health == 0)
     {
         HandleDeath();
     }
 }
 
-public bool CanAfford(int cost) => m_currency >= cost;
+public bool CanAfford(int cost) => _currency >= cost;
 ```
 
 ## Private methods
@@ -567,7 +605,7 @@ public bool CanAfford(int cost) => m_currency >= cost;
 // Event callbacks grouped together
 private void HandleDied()
 {
-    m_animator.SetTrigger(k_deathTrigger);
+    _animator.SetTrigger(DeathTrigger);
 }
 
 private void HandleJumpPerformed(InputAction.CallbackContext context)
@@ -579,7 +617,7 @@ private void HandleJumpPerformed(InputAction.CallbackContext context)
 private void HandleDeath()
 {
     enabled = false;
-    m_collider.enabled = false;
+    _collider.enabled = false;
 }
 ```
 
@@ -595,13 +633,13 @@ private void HandleDeath()
 ```csharp
 public class Inventory : MonoBehaviour
 {
-    [SerializeField] private List<Slot> m_slots = new();
+    [SerializeField] private List<Slot> _slots = new();
 
     // Nested - meaningless outside Inventory
     [Serializable]
     public struct Slot
     {
-        public ItemDataSO Item;
+        public ItemConfig Item;
         public int Count;
     }
 }
@@ -633,19 +671,19 @@ internal enum SortOrder
 // Action: performs behavior / side effects
 public void Jump()
 {
-    m_rigidbody.AddForce(Vector3.up * m_jumpForce, ForceMode.Impulse);
+    _rigidbody.AddForce(Vector3.up * _jumpForce, ForceMode.Impulse);
 }
 
 // Setter: clearly assigns or updates a value (suitable for input callbacks)
 public void SetMovementInput(Vector2 input)
 {
-    m_forwardMovementInput = input;
+    _forwardMovementInput = input;
 }
 
 // Modifier: transforms or changes state
 public void ChangeHealth(int amount)
 {
-    m_health += amount;
+    _health += amount;
 }
 
 // "Handle" for event-driven callbacks (responding to external events/input)
@@ -657,9 +695,9 @@ private void HandleTargetSelected(Targetable target)
 // "Process" for game logic operations (part of game flow, usually turn-based or system-driven)
 private void ProcessTurnIncome()
 {
-    foreach (Settlement settlement in m_settlements)
+    foreach (Settlement settlement in _settlements)
     {
-        m_resources.AddGold(settlement.GoldPerTurn);
+        _resources.AddGold(settlement.GoldPerTurn);
     }
 }
 
@@ -709,6 +747,9 @@ public interface IDamageable<T>
 - ✅ Organize scripts into folders based on functionality or feature areas (e.g., `CoreSystems/`, `UI/`).
 - ✅ Don't worry about long folder paths if they improve organization and clarity. That only helps future maintainers and your coding assistant.
 - ❌ Avoid spaces and special characters in file and folder names to prevent issues with version control systems and cross-platform compatibility.
+- ✅ Name assets by what they are, not by a type prefix. `[opinion]` Type and category come from the folder an asset lives in (`Textures/`, `Audio/`, …), so skip tags like `T_`, `M_` or `SFX_` on filenames.
+- ✅ Prefabs and other assets: PascalCase, named after the concept they represent — `Goblin.prefab`, `GoblinConfig.asset`.
+- ✅ Scenes: PascalCase, purpose first — `MainMenu.unity`, `Level01.unity`.
 - ℹ️ If you have a very long folder name with variations you can consider using `_` to separate words. Example: `InputSystemActions_PlayerInputComponent_UnityEvents`, `InputSystemActions_PlayerInputComponent_CSharpEvents`, etc.
 - ❌ Don't use `NotImplementedException` when stubbing out new methods or event handlers. It adds unnecessary noise and makes it harder to read the code. Instead, leave the method body empty or add a comment indicating that the implementation is pending.
 
@@ -740,11 +781,11 @@ public enum Direction
     West
 }
 
-private Direction m_currentDirection;
+private Direction _currentDirection;
 
 private void Update()
 {
-    switch (m_currentDirection)
+    switch (_currentDirection)
     {
         case Direction.North:
             // Move north
@@ -808,22 +849,22 @@ ExecuteAction();
 ```csharp
 public class ScoreDisplay : MonoBehaviour
 {
-    [SerializeField] private TMP_Text m_scoreText;
-    private int m_lastScore = -1;
+    [SerializeField] private TMP_Text _scoreText;
+    private int _lastScore = -1;
 
     // Bad - readable, but allocates a new string every single frame
     private void Update()
     {
-        m_scoreText.text = $"Score: {m_score}";
+        _scoreText.text = $"Score: {_score}";
     }
 
     // Good - only allocates when the score actually changes
     private void Update()
     {
-        if (m_score == m_lastScore) return;
+        if (_score == _lastScore) return;
 
-        m_lastScore = m_score;
-        m_scoreText.text = $"Score: {m_score}";
+        _lastScore = _score;
+        _scoreText.text = $"Score: {_score}";
     }
 }
 ```
@@ -842,19 +883,19 @@ public class ScoreDisplay : MonoBehaviour
 public class EnemyRegistry : MonoBehaviour
 {
     // Target-typed new expression (C# 9.0+)
-    [SerializeField] private List<GameObject> m_enemies = new();
+    [SerializeField] private List<GameObject> _enemies = new();
 
     public void Register(GameObject enemy)
     {
-        if (!m_enemies.Contains(enemy))
+        if (!_enemies.Contains(enemy))
         {
-            m_enemies.Add(enemy);
+            _enemies.Add(enemy);
         }
     }
 
     public void Unregister(GameObject enemy)
     {
-        m_enemies.Remove(enemy);
+        _enemies.Remove(enemy);
     }
 }
 ```
@@ -910,28 +951,30 @@ private async Awaitable Start()
 ## Scriptable Objects
 - ✅ Favor ScriptableObjects for static configuration data and reusable content that stays the same while the game runs (e.g., weapons, enemy stats, skill effects).
 - ❌ Don't use ScriptableObjects to store data that changes during gameplay (like player health, score, or runtime state). Edits made in the Editor persist between play sessions and will surprise you.
-- ✅ Use ScriptableObjects to reduce coupling between systems — feed configuration into MonoBehaviours instead of having them fetch data manually.
+- ✅ Use ScriptableObjects to reduce coupling between systems — feed configuration into MonoBehaviours (via `[SerializeField]`) or pure C# classes (via their constructor) instead of having them fetch data manually.
 - ✅ Always mark ScriptableObjects with `[CreateAssetMenu]` for easy asset creation via the Project window.
-- ✅ Append a `DataSO` suffix (e.g., `WeaponDataSO`) to make ScriptableObjects easily identifiable. *(Opinionated — plenty of teams use no suffix at all.)*
+- ✅ Give the menu a `"<Category>/<Asset Name>"` path and set `fileName` to the class name exactly.
+- ✅ End every ScriptableObject class name with `Config` (e.g., `WeaponConfig`). *(Opinionated — plenty of teams use no suffix at all.)*
 - ✅ Store ScriptableObject assets in a dedicated folder structure (e.g., `Assets/Data/Weapons/`).
 - ✅ Keep ScriptableObjects focused on a single responsibility to enhance reusability and maintainability.
 - ✅ Keep data and logic separate: ScriptableObjects should primarily hold data. Only add logic that directly relates to the data.
 - ✅ Use properties to expose data from ScriptableObjects instead of public fields for better encapsulation.
+- ℹ️ See [UnityScriptableObjectInstructions.md](UnityReferenceGuides/UnityScriptableObjectInstructions.md) for naming, menu paths, config versus runtime data, folder organisation and binary serialization.
 
 ```csharp
-// WeaponDataSO stores weapon configuration
-[CreateAssetMenu(fileName = "WeaponData", menuName = "Game Data/Weapon", order = 0)]
-public class WeaponDataSO : ScriptableObject
+// WeaponConfig stores weapon configuration
+[CreateAssetMenu(fileName = "WeaponConfig", menuName = "Weapons/Weapon Config")]
+public class WeaponConfig : ScriptableObject
 {
-    [SerializeField] private string m_weaponName;
-    [SerializeField] private int m_damage;
-    [SerializeField] private float m_range;
-    [SerializeField] private GameObject m_projectilePrefab;
+    [SerializeField] private string _weaponName;
+    [SerializeField] private int _damage;
+    [SerializeField] private float _range;
+    [SerializeField] private GameObject _projectilePrefab;
 
-    public string WeaponName => m_weaponName;
-    public int Damage => m_damage;
-    public float Range => m_range;
-    public GameObject ProjectilePrefab => m_projectilePrefab;
+    public string WeaponName => _weaponName;
+    public int Damage => _damage;
+    public float Range => _range;
+    public GameObject ProjectilePrefab => _projectilePrefab;
 }
 ```
 
@@ -941,8 +984,8 @@ public class WeaponDataSO : ScriptableObject
 - ✅ Use descriptive names that clearly indicate the purpose or state.
 - ✅ Always define these names as constants in code to prevent runtime errors, enable refactoring, and avoid typos.
 - ✅ Centralize these constants in a dedicated static class for maintainability and discoverability.
-- ℹ️ **Naming note:** `public const` members of a static lookup class are API surface, so they use
-  PascalCase with no prefix. The `k_` prefix is for private constants inside a behaviour.
+- ℹ️ **Naming note:** every constant is PascalCase with no prefix — `public const` on a static lookup class and
+  `private const` inside a behaviour alike.
 - ✅ **For animators, go one step further and hash the parameter names.** `Animator.StringToHash` converts
   the string once at startup; every `SetBool`/`SetFloat`/`SetTrigger` after that skips the string lookup
   entirely. Store the hashes in `static readonly int` fields.
@@ -973,32 +1016,32 @@ public static class Layers
 // Animator parameters - hash once, use the int forever after
 public class PlayerAnimator : MonoBehaviour
 {
-    private static readonly int s_isRunningHash = Animator.StringToHash("IsRunning");
-    private static readonly int s_speedHash = Animator.StringToHash("Speed");
-    private static readonly int s_jumpTriggerHash = Animator.StringToHash("JumpTrigger");
+    private static readonly int IsRunningHash = Animator.StringToHash("IsRunning");
+    private static readonly int SpeedHash = Animator.StringToHash("Speed");
+    private static readonly int JumpTriggerHash = Animator.StringToHash("JumpTrigger");
 
-    private Animator m_animator;
+    private Animator _animator;
 
     private void Awake()
     {
-        m_animator = GetComponent<Animator>();
+        _animator = GetComponent<Animator>();
     }
 
     private void UpdateMovement(bool isMoving, float currentSpeed)
     {
         // Safe and fast - no string comparison at runtime
-        m_animator.SetBool(s_isRunningHash, isMoving);
-        m_animator.SetFloat(s_speedHash, currentSpeed);
+        _animator.SetBool(IsRunningHash, isMoving);
+        _animator.SetFloat(SpeedHash, currentSpeed);
     }
 }
 
 // Bad - magic strings scattered throughout code (runtime errors possible)
 private void UpdateMovementBadly(bool isMoving, float currentSpeed)
 {
-    m_animator.SetBool("IsWalking", isMoving);        // Typo risk
-    m_animator.SetFloat("Spead", currentSpeed);       // Typo - fails silently!
+    _animator.SetBool("IsWalking", isMoving);         // Typo risk
+    _animator.SetFloat("Spead", currentSpeed);        // Typo - fails silently!
 
-    if (m_animator.GetBool("IsWalknig"))              // Another typo
+    if (_animator.GetBool("IsWalknig"))               // Another typo
     {
         // This condition will never be true due to the typo
     }
@@ -1028,18 +1071,18 @@ Debug.LogError($"[{GetType().Name}] Failed to load data: {exception.Message}", t
 private void OnDrawGizmosSelected()
 {
     Gizmos.color = Color.green;
-    Gizmos.DrawWireSphere(transform.position, m_detectionRadius);
+    Gizmos.DrawWireSphere(transform.position, _detectionRadius);
 }
 
 // Use [RequireComponent] instead of null-checking a hard dependency
 [RequireComponent(typeof(AudioSource))]
 public class AudioPlayer : MonoBehaviour
 {
-    private AudioSource m_audioSource;
+    private AudioSource _audioSource;
 
     private void Awake()
     {
-        m_audioSource = GetComponent<AudioSource>();
+        _audioSource = GetComponent<AudioSource>();
     }
 }
 ```
@@ -1056,7 +1099,7 @@ public void SaveGame(GameData data)
     try
     {
         string json = JsonUtility.ToJson(data);
-        File.WriteAllText(k_saveFilePath, json);
+        File.WriteAllText(SaveFilePath, json);
     }
     catch (IOException ioEx)
     {
@@ -1088,6 +1131,7 @@ This guide covers style and naming. The general best-practice guides go into dep
 | Topic | Guide |
 |---|---|
 | SOLID, patterns, object pooling, state machines | [UnityDesignPatternsInstructions.md](UnityReferenceGuides/UnityDesignPatternsInstructions.md) |
+| ScriptableObjects: naming, menu paths, config vs runtime data | [UnityScriptableObjectInstructions.md](UnityReferenceGuides/UnityScriptableObjectInstructions.md) |
 | Hot paths, allocations, profiling, rendering cost | [UnityPerformanceOptimizationInstructions.md](UnityReferenceGuides/UnityPerformanceOptimizationInstructions.md) |
 | UXML, USS, BEM, flexbox, runtime binding | [UnityUIToolkitInstructions.md](UnityReferenceGuides/UnityUIToolkitInstructions.md) |
 | Canvas structure, layout rebuilds, uGUI pitfalls | [UnityUGUIInstructions.md](UnityReferenceGuides/UnityUGUIInstructions.md) |

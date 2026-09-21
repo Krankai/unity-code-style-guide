@@ -39,13 +39,13 @@ With domain reload disabled, **static fields persist between play sessions**:
 
 ```csharp
 // This value WON'T reset when you stop and start play mode
-private static int s_playerCount = 0;
+private static int _playerCount = 0;
 
 // Fix: Reset in RuntimeInitializeOnLoadMethod
 [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
 private static void ResetStatics()
 {
-    s_playerCount = 0;
+    _playerCount = 0;
 }
 ```
 
