@@ -216,7 +216,7 @@ public class AudioService : MonoBehaviour
   asset, neither references the other.
 - ⚠️ Remember that a ScriptableObject holding runtime state persists in the Editor between plays.
   Reset it in `OnEnable` — see
-  [ScriptableObjects](../UnityStyleGuide.md#scriptable-objects).
+  [ScriptableObjects](UnityScriptableObjectInstructions.md).
 
 ---
 

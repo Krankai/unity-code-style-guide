@@ -17,23 +17,32 @@
 | Area | This project uses | Not used — do not generate |
 |---|---|---|
 | Input | Input System package | Legacy Input Manager (`Input.GetAxis`, `Input.GetKey`) |
-| UI | UI Toolkit (UXML/USS) | uGUI / Canvas, IMGUI for runtime UI |
+| UI | uGUI (Canvas/Image/TextMeshPro) | UI Toolkit (UXML/USS), IMGUI for runtime UI |
 | Rendering | Universal Render Pipeline (URP 17.3) | Built-in Render Pipeline, HDRP |
-| Async | `Awaitable` + async/await | Coroutines, except where per-frame iteration is genuinely needed |
+| Async | UniTask (Cysharp) | `Awaitable`, coroutines except where per-frame iteration is genuinely needed |
+| Dependency injection | VContainer — constructor injection, one root `LifetimeScope` per scene | Hand-rolled `ServiceLocator`, manually `new`ing services |
+| Messaging | MessagePipe — reserved for narrow cases only (see the Architecture guide) | A default/global event bus for everyday cross-system communication |
+| Reactive callbacks | R3 (`Observable`), mainly for deterministic subscription cleanup via `AddTo()` | UniRx (legacy) |
 | Pooling | `UnityEngine.Pool.ObjectPool<T>` | Hand-rolled pool implementations |
 
 ## Conventions that follow from the stack
 
-- ℹ️ Prefer `Awaitable` over coroutines for sequencing:
-  `await Awaitable.WaitForSecondsAsync(delay, destroyCancellationToken);`
-  Guard continuations with `if (this == null || !isActiveAndEnabled) return;`.
+- ℹ️ Prefer UniTask over `Awaitable` or coroutines for async gameplay code. `Awaitable` is still valid
+  Unity 6 API and works the same way if a project isn't on UniTask, but it isn't this project's default.
+  See `UnityReferenceGuides/UnityUniTaskInstructions.md` for common patterns.
 - ℹ️ When instantiating frequently, favour `UnityEngine.Pool.ObjectPool<T>` with
   `actionOnGet`/`actionOnRelease` to toggle active state.
-- ℹ️ UI work goes through UI Toolkit. See
-  [UnityUIToolkitInstructions.md](../UnityReferenceGuides/UnityUIToolkitInstructions.md).
-  If you switch to uGUI, read
-  [UnityUGUIInstructions.md](../UnityReferenceGuides/UnityUGUIInstructions.md) instead and update
-  the table above.
+- ℹ️ UI work goes through uGUI. See
+  [UnityUGUIInstructions.md](../UnityReferenceGuides/UnityUGUIInstructions.md).
+  If you switch to UI Toolkit, read
+  [UnityUIToolkitInstructions.md](../UnityReferenceGuides/UnityUIToolkitInstructions.md) instead and
+  update the table above.
+- ℹ️ Services are registered with and resolved through VContainer, not constructed manually or
+  accessed through statics. Default to a direct, constructor-injected interface reference for
+  cross-system communication — VContainer covers this project's needs on its own in the large
+  majority of cases. MessagePipe is an optional add-on, installed only when one of the narrow cases
+  the Architecture guide lists actually comes up. See
+  `UnityReferenceGuides/UnityArchitectureInstructions.md` for the full pattern.
 
 ## Packages
 
@@ -46,6 +55,12 @@ installed, or reinvent something a package already provides.
 | `com.unity.render-pipelines.universal` | 17.3 | Rendering |
 | `com.unity.addressables` | — | *(fill in or remove)* |
 | `com.unity.test-framework` | — | *(fill in or remove)* |
+| `com.unity.textmeshpro` | — | Text rendering (uGUI) |
+| `com.cysharp.unitask` | — | Async/await for gameplay code |
+| `jp.hadashikick.vcontainer` | — | Dependency injection |
+| MessagePipe | — | *(optional — install only if/when one of the narrow cases in the Architecture guide comes up; VContainer + direct references handle everything else)* |
+| R3 | — | Reactive `Observable` streams |
+| Odin Inspector | — | *(optional — fill in if used, remove if not)* |
 
 ## Platform targets
 

@@ -33,6 +33,7 @@ signing up for.
 │   ├── UnityPerformanceOptimizationInstructions.md
 │   ├── UnityAssetsAndMemoryInstructions.md
 │   ├── UnityDesignPatternsInstructions.md
+│   ├── UnityScriptableObjectInstructions.md
 │   ├── UnityScenesAndLifecycleInstructions.md
 │   ├── UnityUIToolkitInstructions.md
 │   ├── UnityUGUIInstructions.md

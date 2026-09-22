@@ -1744,6 +1744,8 @@ private void OnActiveTabChanged(Tab previousTab, Tab newTab)
 
 ## MVP Design Pattern with Data Binding
 
+> **Note:** This example is kept as originally written and predates the [ScriptableObject guide](UnityScriptableObjectInstructions.md). Its Model (`PlayerStatsModel`) is a ScriptableObject holding runtime-bound state, which that guide advises against — runtime state belongs in a plain C# class, with ScriptableObjects reserved for authored `*Config` data. Treat this section as an illustration of UI Toolkit data binding rather than as the project's default architecture.
+
 This section demonstrates a clean **Model-View-Presenter (MVP)** architecture using Unity 6 runtime data binding, separating data (Model), UI display (View), and game logic (Presenter).
 
 ### View Naming Convention

@@ -33,7 +33,7 @@ Table of contents:
 - ✅ One audio service that owns playback. Components ask it to play a sound; they don't create
   `AudioSource`s themselves.
 - ✅ Define sounds as ScriptableObjects (clip + volume + pitch range + mixer group), per
-  [ScriptableObjects](../UnityStyleGuide.md#scriptable-objects). Designers tune them without touching
+  [ScriptableObjects](UnityScriptableObjectInstructions.md). Designers tune them without touching
   code.
 - ⚠️ Randomise pitch slightly (±0.05) on repeated SFX. Identical playback of the same clip is the
   single most fatiguing thing in game audio.

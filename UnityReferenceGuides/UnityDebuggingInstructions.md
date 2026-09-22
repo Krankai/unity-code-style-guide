@@ -924,6 +924,8 @@ private void AddScore(int points)
 
 ## ScriptableObject Runtime Issues
 
+When and how to use ScriptableObjects is covered in [UnityScriptableObjectInstructions.md](UnityScriptableObjectInstructions.md); this section is for debugging them.
+
 ### Instance vs Asset Confusion
 
 ```csharp
