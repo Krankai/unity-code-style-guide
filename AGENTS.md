@@ -16,8 +16,8 @@ Unity version:    6.3 (6000.3.x)
 C# version:       9.0
 Render pipeline:  URP
 Input:            Input System package  (NOT the legacy Input Manager)
-UI:               UI Toolkit            (NOT uGUI / Canvas)
-Async:            Awaitable             (NOT coroutines, unless per-frame iteration is needed)
+UI:               uGUI                  (NOT UI Toolkit / Canvas)
+Async:            UniTask               (NOT Awaitable/coroutines, except where per-frame iteration is genuinely needed)
 Pooling:          UnityEngine.Pool.ObjectPool<T>
 ```
 
@@ -121,8 +121,8 @@ row, and keep the `FindObjectsSortMode.None` form on 6000.0–6000.5.
 | Enum type / values | PascalCase, singular noun | `Direction.North` |
 | Class / file / folder | PascalCase | `PlayerController.cs` |
 | ScriptableObject | PascalCase + `Config` `[opinion]` | `WeaponConfig` |
-| Async method | PascalCase + `Async` | `LoadLevelAsync` |
-| Coroutine | PascalCase + `Co` `[opinion]` | `FadeOutCo` |
+| Async method | `Task`-prefix, PascalCase `[opinion]` | `TaskLoadLevel` |
+| Coroutine | PascalCase + `Routine` `[opinion]` | `FadeOutRoutine` |
 | Animator param / tag / layer | PascalCase | `IsRunning` |
 
 - Include units when a number is ambiguous: `_speedInMetersPerSecond`, `_delayInSeconds`.
@@ -229,27 +229,55 @@ Unity 6 API notes:
 
 - Renamed and obsolete APIs are listed under [Deprecated in Unity 6](#deprecated-in-unity-6).
   Beyond the rename, prefer a registry over any `Find*` call at runtime.
-- Prefer `Awaitable` over coroutines. Take a `CancellationToken` (`destroyCancellationToken`) and
-  guard continuations with `if (this == null || !isActiveAndEnabled) return;`.
-- Avoid `async void`; `async Awaitable` works as a Unity message signature and surfaces exceptions.
+- Prefer UniTask over `Awaitable`/coroutines for gameplay async code — see [Async](#async) below.
+  `Awaitable` is still valid Unity 6 API and works the same way for a project that isn't on UniTask.
+- Avoid `async void`; use `UniTaskVoid` (fire-and-forget) or `UniTask`/`UniTask<T>` (awaited) so
+  exceptions can actually be observed.
 
 ## Async
 
+- UniTask is this project's default for async gameplay code, per
+  [`UnityTechStack.md`](UnityCustomInstructions/UnityTechStack.md). Prefix async methods with
+  `Task`, never suffix with `Async`: `TaskOpenDoor`, not `OpenDoorAsync`. `[opinion]`
+- Pull a `MonoBehaviour`'s cancellation token from `this.GetCancellationTokenOnDestroy()` rather
+  than managing one by hand.
+- Wrap every async method body in `try`/`catch (System.Exception e)`, not just where there's
+  fallback logic — re-throw `OperationCanceledException` explicitly. Stricter than the general
+  [Control flow](#control-flow) try/catch rule, which still governs synchronous code.
+- The rare legitimate coroutine takes a `Routine` suffix (`FadeOutRoutine`), not `Task`-prefix.
+- Full pattern set — cancellation, error handling, `WhenAll`/`WhenAny`, closure-free `WaitUntil`,
+  and more — in
+  [`UnityReferenceGuides/UnityUniTaskInstructions.md`](UnityReferenceGuides/UnityUniTaskInstructions.md).
+
 ```csharp
-private async Awaitable OpenAsync(CancellationToken token)
+public async UniTask TaskOpenDoor()
 {
-    await Awaitable.WaitForSecondsAsync(2f, token);
-    if (this == null || !isActiveAndEnabled) return;   // May have been destroyed while waiting
-    _isOpen = true;
+    try
+    {
+        await UniTask.Delay(2000, cancellationToken: this.GetCancellationTokenOnDestroy());
+        _isOpen = true;
+    }
+    catch (System.OperationCanceledException)
+    {
+        throw;
+    }
+    catch (System.Exception e)
+    {
+        AppLogger.LogException(e);
+    }
 }
 ```
 
 ## ScriptableObjects
 
-- For static configuration and shared content. **Not** for runtime state — Editor edits persist
-  between play sessions.
-- Always `[CreateAssetMenu]`. Expose data through properties, not public fields.
+- For static, authored configuration and shared content. **Not** for runtime state — Editor edits
+  persist between play sessions. Per-entity runtime data belongs in a plain C# class or struct.
+- Always `[CreateAssetMenu(fileName = "<ClassName>", menuName = "<Category>/<Asset Name>")]`, e.g.
+  `menuName = "Enemies/Enemy Config"`. `fileName` matches the class name exactly.
+- Expose data through get-only properties over `[SerializeField]` private fields, never public fields.
 - Suffix with `Config`. `[opinion]`
+- ℹ️ Details:
+  [`UnityReferenceGuides/UnityScriptableObjectInstructions.md`](UnityReferenceGuides/UnityScriptableObjectInstructions.md).
 
 ## Strings and collections
 
@@ -264,7 +292,8 @@ private async Awaitable OpenAsync(CancellationToken token)
 - Guard clauses over nested `if`. `if (!ready) return;`
 - Enums for mutually exclusive state, never magic ints or strings.
 - `try`/`catch` only for genuinely external failures (file I/O, network). Validate inputs instead of
-  catching predictable problems.
+  catching predictable problems. **Async methods are the exception — every one gets a try/catch,
+  see [Async](#async).**
 - Never leave `throw new NotImplementedException()` in a generated stub. Empty body or a comment.
 
 ## Editor code
@@ -350,6 +379,8 @@ rather than the GameObject to hide a screen; `RectMask2D` over `Mask`; pool list
 | Full style guide with examples | `UnityStyleGuide.md` |
 | Performance, profiling, Jobs, rendering | `UnityReferenceGuides/UnityPerformanceOptimizationInstructions.md` |
 | SOLID and design patterns | `UnityReferenceGuides/UnityDesignPatternsInstructions.md` |
+| ScriptableObjects, `[CreateAssetMenu]`, config vs runtime data | `UnityReferenceGuides/UnityScriptableObjectInstructions.md` |
+| UniTask patterns, cancellation, closure-free overloads | `UnityReferenceGuides/UnityUniTaskInstructions.md` |
 | UI Toolkit (UXML/USS/BEM) | `UnityReferenceGuides/UnityUIToolkitInstructions.md` |
 | uGUI / Canvas | `UnityReferenceGuides/UnityUGUIInstructions.md` |
 | Assets, Addressables, memory | `UnityReferenceGuides/UnityAssetsAndMemoryInstructions.md` |

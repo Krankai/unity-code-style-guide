@@ -24,6 +24,8 @@ ones worth discussing before you adopt the guide wholesale:
 | ScriptableObject menu path | `"<Category>/<Asset Name>"` | Unity default, or a flat menu |
 | Asset filenames | Folder-based, no type-tag prefixes | `T_`, `M_`, `SFX_` prefixes |
 | Method verbs | `Handle` for event callbacks, `Process` for game-flow logic | `On`, or no distinction |
+| Async method naming | `Task`-prefix | `Async`-suffix, or no convention |
+| Coroutine naming | `Routine`-suffix | `Co`-suffix, or no convention |
 
 Everything else — PascalCase types, methods and constants, `is`/`has`/`can` booleans, `I`-prefixed interfaces,
 caching in `Awake`, unsubscribing in `OnDisable` — is standard practice, not preference.
@@ -67,7 +69,7 @@ Table of contents:
   - [Avoid nesting if statements](#avoid-nesting-if-statements)
   - [Managing string allocations](#managing-string-allocations)
   - [Collection type selection](#collection-type-selection)
-  - [Async & Awaitable usage](#async--awaitable-usage)
+  - [Async & UniTask usage](#async--unitask-usage)
   - [Scriptable Objects](#scriptable-objects)
   - [Animation parameters, layers, tags, sorting layers, and input action names](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)
   - [Debugging](#debugging)
@@ -900,34 +902,53 @@ public class EnemyRegistry : MonoBehaviour
 }
 ```
 
-## Async & Awaitable usage
-- ✅ Use the `Awaitable` API (Unity 6 and later) with async/await for timed delays, sequencing, or
-  asynchronous workflows that don't require per-frame iteration. This is cleaner and more readable
-  than coroutines.
-- ✅ Name async methods with the `Async` suffix (e.g., `OpenDoorAsync`) and coroutines with the `Co`
-  suffix (e.g., `LoadAssetsCo`) to clearly distinguish them.
-- ✅ Use PascalCase and verb-based names for both async and coroutine methods.
-- ❌ Do not mix `Awaitable` and coroutines within the same operation — choose one approach per workflow.
-- ✅ Take a `CancellationToken` and guard continuations. After an `await`, the object may have been
-  destroyed: `if (this == null || !isActiveAndEnabled) return;`
-- ⚠️ Avoid `async void`. It can't be awaited and swallows exceptions. `async Awaitable` is awaitable and
-  is valid as a Unity message signature, so use it even for `Start`.
-- ⚠️ Cache `WaitForSeconds` in coroutines — allocating one per loop iteration is a classic leak.
+## Async & UniTask usage
+- ✅ UniTask is this project's default for async gameplay code — see
+  [`UnityCustomInstructions/UnityTechStack.md`](UnityCustomInstructions/UnityTechStack.md). Unity's
+  built-in `Awaitable` API is still valid Unity 6 API and works the same way if a project isn't on
+  UniTask; the naming and error-handling rules below apply to either.
+- ✅ Prefix async methods with the `Task` prefix (e.g., `TaskOpenDoor`), never with an `Async` suffix.
+  Name the rare legitimate coroutine with a `Routine` suffix instead (e.g., `LoadAssetsRoutine`), so
+  the two are never visually confused. `[opinion]`
+- ✅ Pull a `MonoBehaviour`'s cancellation token from `this.GetCancellationTokenOnDestroy()` rather
+  than managing a `CancellationTokenSource` by hand, so async work is auto-cancelled when the
+  component is destroyed.
+- ✅ Wrap every async method body in `try`/`catch (System.Exception e)`, applied consistently, not
+  just where there's fallback logic to run — re-throw `System.OperationCanceledException` explicitly
+  before the general catch. This is stricter than this guide's general
+  [try-catch stance](#using-try-catch--debugger-breaks), which still governs synchronous code.
+- ❌ Do not mix `Awaitable`/UniTask and coroutines within the same operation — choose one approach
+  per workflow.
+- ⚠️ Avoid `async void`. It can't be awaited and swallows exceptions. Use `UniTaskVoid` for
+  fire-and-forget work (with `.Forget()` at the call site) or `UniTask`/`UniTask<T>` for anything
+  awaited.
+- ⚠️ Cache `WaitForSeconds` in a coroutine — allocating one per loop iteration is a classic leak.
+- ℹ️ The full pattern set — composing tasks, timing control, closure-free `WaitUntil` overloads, and
+  more — is in
+  [UnityUniTaskInstructions.md](UnityReferenceGuides/UnityUniTaskInstructions.md).
 
 ```csharp
-public async Awaitable OpenDoorAsync(CancellationToken token)
+public async UniTask TaskOpenDoor()
 {
-    Debug.Log("Door opening...");
+    try
+    {
+        Debug.Log("Door opening...");
 
-    await Awaitable.WaitForSecondsAsync(2f, token);
+        await UniTask.Delay(2000, cancellationToken: this.GetCancellationTokenOnDestroy());
 
-    // The object may have been destroyed while we were waiting
-    if (this == null || !isActiveAndEnabled) return;
-
-    Debug.Log("Door opened!");
+        Debug.Log("Door opened!");
+    }
+    catch (System.OperationCanceledException)
+    {
+        throw;
+    }
+    catch (System.Exception e)
+    {
+        Debug.LogException(e);
+    }
 }
 
-private IEnumerator LoadAssetsCo()
+private IEnumerator LoadAssetsRoutine()
 {
     // Cache the wait - don't allocate one per iteration
     var wait = new WaitForSeconds(0.5f);
@@ -941,10 +962,9 @@ private IEnumerator LoadAssetsCo()
     Debug.Log("All assets loaded!");
 }
 
-// async Awaitable, not async void - exceptions surface and it can be awaited
-private async Awaitable Start()
+private async UniTaskVoid Start()
 {
-    await OpenDoorAsync(destroyCancellationToken);
+    await TaskOpenDoor();
 }
 ```
 
@@ -1088,6 +1108,8 @@ public class AudioPlayer : MonoBehaviour
 ```
 
 ## Using try-catch & debugger breaks
+- ℹ️ **Exception:** every async method's body gets a try/catch, applied consistently — see
+  [Async & UniTask usage](#async--unitask-usage). This section's rule governs synchronous code.
 - ✅ Use try-catch for external dependencies — file I/O, network requests, platform services — where failures are outside your control. These are genuinely exceptional cases.
 - ❌ Avoid try-catch for internal logic or expected conditions (e.g., null checks, invalid input). Validate inputs and use control flow instead.
 - ✅ Always log the exception details to help with debugging.
@@ -1132,6 +1154,7 @@ This guide covers style and naming. The general best-practice guides go into dep
 |---|---|
 | SOLID, patterns, object pooling, state machines | [UnityDesignPatternsInstructions.md](UnityReferenceGuides/UnityDesignPatternsInstructions.md) |
 | ScriptableObjects: naming, menu paths, config vs runtime data | [UnityScriptableObjectInstructions.md](UnityReferenceGuides/UnityScriptableObjectInstructions.md) |
+| UniTask: cancellation, error handling, closure-free overloads | [UnityUniTaskInstructions.md](UnityReferenceGuides/UnityUniTaskInstructions.md) |
 | Hot paths, allocations, profiling, rendering cost | [UnityPerformanceOptimizationInstructions.md](UnityReferenceGuides/UnityPerformanceOptimizationInstructions.md) |
 | UXML, USS, BEM, flexbox, runtime binding | [UnityUIToolkitInstructions.md](UnityReferenceGuides/UnityUIToolkitInstructions.md) |
 | Canvas structure, layout rebuilds, uGUI pitfalls | [UnityUGUIInstructions.md](UnityReferenceGuides/UnityUGUIInstructions.md) |
