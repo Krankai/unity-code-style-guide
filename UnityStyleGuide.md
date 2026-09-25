@@ -281,6 +281,10 @@ private int _elapsedTimeInSeconds;
 - ❌ Don't add a prefix (`k_maxRetries`) and don't use SCREAMING_CASE (`MAX_RETRIES`).
 - ✅ Static lookup classes for tags, layers and input action names follow the same rule (see [Animation parameters](#animation-parameters-layers-tags-sorting-layers-and-input-action-names)).
 - ⚠️ A static field that *does* change is state, not a constant. It takes the `_` prefix like any other field (`_instance`, `_score`) and needs a reset when Domain Reload is disabled. See [Domain reload and static state](UnityReferenceGuides/UnityScenesAndLifecycleInstructions.md#domain-reload-and-static-state).
+- ⚠️ Avoid making a collection `static readonly` if it's added to and removed from constantly — the PascalCase
+  name will read like a constant. Declare it as a plain `static` with the `_` prefix instead (or, better, as an
+  instance field). The exception is a collection where `static readonly` has a real performance benefit, such as
+  a pre-allocated buffer that's reused with `Clear()`.
 
 ```csharp
 // Constants: PascalCase, no prefix, any accessibility
@@ -347,39 +351,54 @@ public Vector2 MovementInput
 ```
 
 ### Events
-- ✅ Use `event Action` or `event Action<T>` for declaring events for the majority of cases.
-- ✅ Use `UnityEvent` only when you need to expose callbacks to the Inspector. I generally avoid
-  `UnityEvent` for code-only events as `Action` is more lightweight and flexible.
-- ✅ Follow the C# event naming convention: use past tense verbs (e.g., `DoorOpened`, not `OnDoorOpen`).
-- ✅ Use the `On` prefix for methods that raise events (e.g., `OnDoorOpened`), and use past-tense verbs
-  for the event name itself (e.g., `DoorOpened`).
-- ✅ Make the raiser `protected virtual` when the class may be subclassed, so derived types can extend
-  rather than replace the behaviour. Use `private` when it won't be.
+- ✅ Use R3 as the default for events and notifications: the owner keeps a private `Subject<T>` and exposes it as a
+  read-only `Observable<T>`; subscribers attach with `.Subscribe(...).AddTo(...)`. This is also how the
+  observer pattern is implemented here — see
+  [UnityArchitectureInstructions.md](UnityReferenceGuides/UnityArchitectureInstructions.md#reactive-callbacks-r3).
+- ✅ Expose `Observable<T>`, never the `Subject<T>` — only the owner may raise it. Use `Subject<Unit>` (and
+  `OnNext(Unit.Default)`) for an event with no payload.
+- ✅ Name the observable `On` + past tense (`OnDoorOpened`), the private subject `_` + past tense (`_doorOpened`),
+  and the subscriber's handler `Handle*` (`HandleDoorOpened`). There is no raiser method: the owner calls
+  `_doorOpened.OnNext(...)` directly.
+- ✅ Use a custom payload type for events that carry multiple values. A `readonly struct` avoids the allocation a
+  class-based `EventArgs` would incur — worth it for anything raised frequently.
+- ✅ The owner disposes its `Subject` in `OnDestroy`. Raising or subscribing after that throws
+  `ObjectDisposedException`.
+- ✅ Prefer `Subject`/`Observable` over `UnityEvent` for every code-driven event. Use `UnityEvent` only for
+  callbacks that must be exposed to the Inspector, for designers to wire.
+- ✅ To consume a Unity component's `UnityEvent` (e.g. `Button.onClick`) from code, convert it with R3 —
+  `OnClickAsObservable()`, or `.AsObservable(destroyCancellationToken)` — instead of `AddListener`.
 - ✅ Use the observer pattern to decouple systems and reduce dependencies (e.g., firing events for UI to update instead of direct references to UI components).
-- ✅ Use the null-conditional operator (`?.`) when raising events to avoid null reference exceptions.
-- ✅ Use a custom event-argument type for events that carry multiple values. A readonly `struct` avoids
-  the allocation that a class-based `EventArgs` would incur — worth it for anything raised frequently.
 - ⚠️ Avoid overusing events for tightly coupled systems where direct method calls would be simpler.
     - ✅ *Use Events*: When you need to decouple systems that don't need to know about each other directly (e.g., broadcasting game state changes to multiple systems). For example, when a GameManager needs to notify multiple unrelated systems (e.g., UI, Audio, Analytics) about a game state change.
     - ❌ *Avoid Events*: When the systems are tightly coupled, and a direct method call or dependency injection is simpler and more efficient. For example, when a PlayerController directly controls a Weapon.
+    - ℹ️ *Across features*, the default is a directly injected interface rather than an event. The
+      GameManager-to-UI/Audio/Analytics fan-out above is one of the few cases where MessagePipe
+      (optional) fits — see [UnityArchitectureInstructions.md](UnityReferenceGuides/UnityArchitectureInstructions.md#communication-direct-references-by-default).
 
 ```csharp
-// Event declarations
-public event Action DoorOpened;         // Use past tense verbs for event names
-public event Action<int> PointsScored;
-public event Action<DamageInfo> DamageTaken;
+// Publisher: private Subject, public read-only Observable
+private readonly Subject<Unit> _doorOpened = new();
+private readonly Subject<int> _pointsScored = new();
+private readonly Subject<DamageInfo> _damageTaken = new();
 
-// Event raising methods
-protected virtual void OnDoorOpened()
+public Observable<Unit> OnDoorOpened => _doorOpened;         // On + past tense for the observable
+public Observable<int> OnPointsScored => _pointsScored;
+public Observable<DamageInfo> OnDamageTaken => _damageTaken;
+
+// Raising: no wrapper method, the owner calls OnNext directly
+private void OpenDoor()
 {
-    // Use the null-conditional operator to avoid null reference exceptions
-    DoorOpened?.Invoke();
+    _isOpen = true;
+    _doorOpened.OnNext(Unit.Default);
 }
 
-// When passing data with events
-protected virtual void OnPointsScored(int points)
+// The owner disposes its subjects when it is destroyed
+private void OnDestroy()
 {
-    PointsScored?.Invoke(points);
+    _doorOpened.Dispose();
+    _pointsScored.Dispose();
+    _damageTaken.Dispose();
 }
 
 // Readonly struct for complex event data - no allocation per raise
@@ -396,20 +415,92 @@ public readonly struct DamageInfo
 }
 ```
 
+#### Fallback: `event Action`
+Use plain C# events only where R3 can't be referenced (for example an assembly that must stay free of the
+dependency). Everything above about decoupling still applies; the conventions differ:
+
+- ✅ Declare with `event Action` or `event Action<T>`. Use past-tense verbs for the event name (`DoorOpened`, not
+  `OnDoorOpen`).
+- ✅ Use the `On` prefix for the method that raises the event (`OnDoorOpened`).
+- ✅ Make the raiser `protected virtual` when the class may be subclassed, so derived types can extend rather than
+  replace the behaviour. Use `private` when it won't be.
+- ✅ Use the null-conditional operator (`?.`) when raising events to avoid null reference exceptions.
+
+```csharp
+public event Action DoorOpened;         // Past tense, no On prefix
+public event Action<int> PointsScored;
+
+protected virtual void OnDoorOpened()   // On prefix on the raiser
+{
+    DoorOpened?.Invoke();
+}
+
+protected virtual void OnPointsScored(int points)
+{
+    PointsScored?.Invoke(points);
+}
+```
+
 #### Subscribing and unsubscribing to events
-- ✅ Subscribe in `OnEnable` and always unsubscribe in `OnDisable` to prevent memory leaks.
-- ✅ Avoid using lambda expressions when subscribing to events as it makes unsubscribing impossible unless you store the lambda in a variable first.
+- ✅ R3: subscribe in `Start` with `.AddTo(this)`. The subscription ends when the object is destroyed.
+- ✅ R3 subscription that must stop while the component is disabled: subscribe in `OnEnable` into a
+  `CompositeDisposable` field and `Clear()` it in `OnDisable`.
+- ❌ Never `.AddTo(this)` inside `OnEnable` — it isn't undone on disable, so every re-enable adds a duplicate.
+- ✅ A plain C# subscriber (Controller, service) holds a `DisposableBag` field, subscribes with
+  `.AddTo(ref _subscriptions)`, and disposes it in its own `Dispose()`. A bag is a struct: keep the field
+  non-`readonly` and never copy it. Use `CompositeDisposable` only for the enabled-only case above — its
+  `Clear()` keeps its backing list, while a bag re-allocates its array after every `Clear()`.
+- ✅ Unity's and third-party C# events (Input System actions, `SceneManager.sceneLoaded`) and `event Action`:
+  subscribe in `OnEnable` and always unsubscribe in `OnDisable` to prevent memory leaks.
+- ✅ Avoid lambdas when subscribing to a C# event — you can't unsubscribe one unless you store it in a variable
+  first. An R3 subscription is disposable, so a short lambda is fine there; a `Handle*` method is still preferred.
 - ⚠️ Be cautious when subscribing long-lived objects (e.g., singletons) to events from short-lived objects to avoid memory leaks.
 
 ```csharp
+// R3: attach the subscription to this object's lifetime
+private void Start()
+{
+    _gameManager.OnDoorOpened.Subscribe(HandleDoorOpened).AddTo(this);
+}
+```
+
+```csharp
+// Enabled-only R3 subscription
+private readonly CompositeDisposable _enabledSubscriptions = new();
+
 private void OnEnable()
 {
-    _gameManager.DoorOpened += HandleDoorOpened;
+    _gameManager.OnPointsScored.Subscribe(HandlePointsScored).AddTo(_enabledSubscriptions);
 }
 
 private void OnDisable()
 {
-    _gameManager.DoorOpened -= HandleDoorOpened;
+    _enabledSubscriptions.Clear();
+}
+```
+
+```csharp
+// Plain C# subscriber: a DisposableBag field (a struct - not readonly, never copied)
+private DisposableBag _subscriptions;
+
+public void Initialize()
+{
+    _health.OnHealthChanged.Subscribe(HandleHealthChanged).AddTo(ref _subscriptions);
+}
+
+public void Dispose() => _subscriptions.Dispose();
+```
+
+```csharp
+// Plain C# event: += in OnEnable, matching -= in OnDisable
+private void OnEnable()
+{
+    SceneManager.sceneLoaded += HandleSceneLoaded;
+}
+
+private void OnDisable()
+{
+    SceneManager.sceneLoaded -= HandleSceneLoaded;
 }
 ```
 
@@ -430,7 +521,11 @@ private void Awake()
 ```
 
 ### OnEnable()
-- ✅ Subscribe to events, register input callbacks, reset per-enable state.
+- ✅ Subscribe to plain C# events (Unity's, third-party, `event Action`), register input callbacks, reset
+  per-enable state.
+- ✅ An R3 subscription that must stop while the component is disabled subscribes here into a
+  `CompositeDisposable` that `OnDisable()` clears.
+- ❌ Never `.AddTo(this)` here — it isn't undone on disable, so every re-enable adds a duplicate.
 - ✅ Keep work small and reversible. Unsubscribe in `OnDisable()`.
 
 ```csharp
@@ -438,12 +533,14 @@ private void OnEnable()
 {
     // Subscribe here; the matching -= belongs in OnDisable()
     _inputActions.Player.Jump.performed += HandleJumpPerformed;
-    _health.Died += HandleDied;
+    SceneManager.sceneLoaded += HandleSceneLoaded;
 }
 ```
 
 ### Start()
 - ✅ Use Start to call initialization methods that require other components to exist and be ready.
+- ✅ Subscribe to another object's R3 observables here with `.AddTo(this)` — the publisher exists by now, and the
+  subscription ends when this object is destroyed.
 - ✅ Perform initialization that requires other components or scene objects to exist.
 - ✅ Use for one-time setup (animations, UI wiring) that must run after all `Awake()`/`OnEnable()`.
 
@@ -456,27 +553,30 @@ private void Start()
 ```
 
 ### OnDisable()
-- ✅ Use OnDisable for unsubscribing from events and cleaning up state when the object is disabled.
-- ✅ Mirror `OnEnable()` exactly. Every `+=` there needs its `-=` here.
+- ✅ Use OnDisable for unsubscribing from plain C# events, clearing enabled-only R3 subscriptions, and cleaning up
+  state when the object is disabled.
+- ✅ Mirror `OnEnable()` exactly. Every `+=` there needs its `-=` here, and every enabled-only R3 subscription
+  its `Clear()`.
 
 ```csharp
 private void OnDisable()
 {
     // Unsubscribe from events here to prevent memory leaks or unexpected behavior
     _inputActions.Player.Jump.performed -= HandleJumpPerformed;
-    _health.Died -= HandleDied;
+    SceneManager.sceneLoaded -= HandleSceneLoaded;
 }
 ```
 
 ### OnDestroy()
 - ✅ Use OnDestroy for teardown that must happen once, permanently — releasing native resources,
-  disposing handles, unregistering from a service locator.
+  disposing handles.
 - ⚠️ `OnDestroy` runs after `OnDisable`, so event unsubscription belongs in `OnDisable`, not here.
   Anything you do in both will run twice.
 - ⚠️ `OnDestroy` is not called if the GameObject was never enabled, and ordering between objects during
   scene teardown is not guaranteed. Don't rely on another object still being alive.
 - ✅ Release anything that isn't garbage-collected: `NativeArray`, `RenderTexture`, `Addressables`
   handles, `IDisposable` fields.
+- ✅ Dispose any R3 `Subject` this class owns.
 
 ```csharp
 private void OnDestroy()
@@ -488,8 +588,6 @@ private void OnDestroy()
     {
         _renderTexture.Release();
     }
-
-    ServiceLocator.Unregister(this);
 }
 ```
 
@@ -1070,7 +1168,18 @@ private void UpdateMovementBadly(bool isMoving, float currentSpeed)
 
 ## Debugging
 - ✅ Log strategically. Avoid excessive logging, especially in production builds.
-- ✅ Use conditional compilation (`#if UNITY_EDITOR`) or a custom logging wrapper to strip logs in release builds.
+- ✅ Route logging through a thin wrapper (`AppLogger`). Its `Log` and `LogWarning` are marked
+  `[System.Diagnostics.Conditional("ENABLE_LOGS")]`. `Debug.Log` on its own is not stripped, and the
+  string built for the message is still built when logging is off — `[Conditional]` removes the call
+  site, arguments included.
+- ✅ `ENABLE_LOGS` is the one define that toggles `Log` and `LogWarning`. Add it to Scripting Define
+  Symbols for builds that should log (Editor, development, QA); leave it out of release builds. Define it
+  in Player Settings rather than per assembly — `[Conditional]` is decided where the call is compiled, so
+  every assembly that logs must see the same define.
+- ✅ `LogError` is deliberately not `[Conditional]`, so errors survive in release builds.
+- ✅ Tag messages with a class- or module-level `DebugPrefix` constant, interpolated as
+  `$"{DebugPrefix} message"`, so logs are searchable. `GetType().Name` works when the concrete type varies.
+- ✅ Match the call to the severity: `Debug.Log`, `Debug.LogWarning`, `Debug.LogError`.
 - ✅ Always include context in log messages and pass the object as the second parameter so clicking the
   log selects it in the Hierarchy.
 - ✅ Use `Debug.DrawLine`, `Debug.DrawRay`, and `Gizmos` for visual debugging in the Editor.
@@ -1086,6 +1195,26 @@ Debug.Log("Player has entered the trigger zone.", gameObject);
 
 // Consistent, searchable error format
 Debug.LogError($"[{GetType().Name}] Failed to load data: {exception.Message}", this);
+
+// A fixed class-level tag - a constant, so the name isn't rebuilt on every call
+private const string DebugPrefix = "[EnemySpawner]";
+Debug.LogWarning($"{DebugPrefix} No spawn points assigned.", this);
+
+// Toggle Log/LogWarning with the ENABLE_LOGS define: [Conditional] removes the whole call site, including
+// the string built for the message, when ENABLE_LOGS isn't defined. LogError is not conditional, so
+// errors still reach release builds
+public static class AppLogger
+{
+    [System.Diagnostics.Conditional("ENABLE_LOGS")]
+    public static void Log(string message, UnityEngine.Object context = null) => UnityEngine.Debug.Log(message, context);
+
+    [System.Diagnostics.Conditional("ENABLE_LOGS")]
+    public static void LogWarning(string message, UnityEngine.Object context = null) => UnityEngine.Debug.LogWarning(message, context);
+
+    public static void LogError(string message, UnityEngine.Object context = null) => UnityEngine.Debug.LogError(message, context);
+}
+
+AppLogger.LogWarning($"{DebugPrefix} No spawn points assigned.", this);
 
 // Gizmos for editor visualization
 private void OnDrawGizmosSelected()
@@ -1153,6 +1282,7 @@ This guide covers style and naming. The general best-practice guides go into dep
 | Topic | Guide |
 |---|---|
 | SOLID, patterns, object pooling, state machines | [UnityDesignPatternsInstructions.md](UnityReferenceGuides/UnityDesignPatternsInstructions.md) |
+| Architecture: MVC, VContainer DI, Singleton policy, MessagePipe, R3 | [UnityArchitectureInstructions.md](UnityReferenceGuides/UnityArchitectureInstructions.md) |
 | ScriptableObjects: naming, menu paths, config vs runtime data | [UnityScriptableObjectInstructions.md](UnityReferenceGuides/UnityScriptableObjectInstructions.md) |
 | UniTask: cancellation, error handling, closure-free overloads | [UnityUniTaskInstructions.md](UnityReferenceGuides/UnityUniTaskInstructions.md) |
 | Hot paths, allocations, profiling, rendering cost | [UnityPerformanceOptimizationInstructions.md](UnityReferenceGuides/UnityPerformanceOptimizationInstructions.md) |
@@ -1163,6 +1293,7 @@ This guide covers style and naming. The general best-practice guides go into dep
 | Edit Mode vs Play Mode tests, test assemblies | [UnityTestingInstructions.md](UnityReferenceGuides/UnityTestingInstructions.md) |
 | Custom inspectors, property drawers, Gizmos | [UnityEditorToolingInstructions.md](UnityReferenceGuides/UnityEditorToolingInstructions.md) |
 | Input System actions, phases, rebinding | [UnityInputSystemInstructions.md](UnityReferenceGuides/UnityInputSystemInstructions.md) |
+| Rigidbodies, colliders, collision callbacks, queries | [UnityPhysicsInstructions.md](UnityReferenceGuides/UnityPhysicsInstructions.md) |
 | Animator parameters, blend trees, events | [UnityAnimationInstructions.md](UnityReferenceGuides/UnityAnimationInstructions.md) |
 | Mixers, AudioSource pooling, spatial audio | [UnityAudioInstructions.md](UnityReferenceGuides/UnityAudioInstructions.md) |
 | Assembly definitions and dependency boundaries | [UnityAssemblyDefinitionsInstructions.md](UnityReferenceGuides/UnityAssemblyDefinitionsInstructions.md) |

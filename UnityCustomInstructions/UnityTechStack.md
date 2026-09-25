@@ -22,14 +22,14 @@
 | Async | UniTask (Cysharp) | `Awaitable`, coroutines except where per-frame iteration is genuinely needed |
 | Dependency injection | VContainer — constructor injection, one root `LifetimeScope` per scene | Hand-rolled `ServiceLocator`, manually `new`ing services |
 | Messaging | MessagePipe — reserved for narrow cases only (see the Architecture guide) | A default/global event bus for everyday cross-system communication |
-| Reactive callbacks | R3 (`Observable`), mainly for deterministic subscription cleanup via `AddTo()` | UniRx (legacy) |
+| Events / Observer | R3 — `Subject<T>` exposed as `Observable<T>`, subscriptions attached with `AddTo()` | Hand-written `event Action` (fallback only where R3 can't be referenced), `UnityEvent` (except events exposed to the Inspector), UniRx (legacy) |
 | Pooling | `UnityEngine.Pool.ObjectPool<T>` | Hand-rolled pool implementations |
 
 ## Conventions that follow from the stack
 
 - ℹ️ Prefer UniTask over `Awaitable` or coroutines for async gameplay code. `Awaitable` is still valid
   Unity 6 API and works the same way if a project isn't on UniTask, but it isn't this project's default.
-  See `UnityReferenceGuides/UnityUniTaskInstructions.md` for common patterns.
+  See [UnityUniTaskInstructions.md](../UnityReferenceGuides/UnityUniTaskInstructions.md) for common patterns.
 - ℹ️ When instantiating frequently, favour `UnityEngine.Pool.ObjectPool<T>` with
   `actionOnGet`/`actionOnRelease` to toggle active state.
 - ℹ️ UI work goes through uGUI. See
@@ -42,7 +42,13 @@
   cross-system communication — VContainer covers this project's needs on its own in the large
   majority of cases. MessagePipe is an optional add-on, installed only when one of the narrow cases
   the Architecture guide lists actually comes up. See
-  `UnityReferenceGuides/UnityArchitectureInstructions.md` for the full pattern.
+  [UnityArchitectureInstructions.md](../UnityReferenceGuides/UnityArchitectureInstructions.md) for the
+  full pattern.
+- ℹ️ If Eflatun.SceneReference is installed (optional), reference scenes through a `SceneReference`
+  serialized field instead of scene-name strings or build indices, and prefer Addressables scenes over
+  Build Settings scenes. See
+  [Dependency injection: VContainer](../UnityReferenceGuides/UnityArchitectureInstructions.md#dependency-injection-vcontainer)
+  for how it fits the boot-scene loading pattern.
 
 ## Packages
 
@@ -59,8 +65,10 @@ installed, or reinvent something a package already provides.
 | `com.cysharp.unitask` | — | Async/await for gameplay code |
 | `jp.hadashikick.vcontainer` | — | Dependency injection |
 | MessagePipe | — | *(optional — install only if/when one of the narrow cases in the Architecture guide comes up; VContainer + direct references handle everything else)* |
-| R3 | — | Reactive `Observable` streams |
+| R3 | — | Events, the Observer pattern, and reactive streams (`Subject`/`Observable`) |
 | Odin Inspector | — | *(optional — fill in if used, remove if not)* |
+| `com.eflatun.scenereference` | — | *(optional — typed scene references, Addressables scenes preferred; fill in if used, remove if not)* |
+| EnhancedScroller (Asset Store, echo17) | — | *(optional — recycled scrolling lists for uGUI; fill in if used, remove if not)* |
 
 ## Platform targets
 

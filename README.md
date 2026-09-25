@@ -34,6 +34,8 @@ signing up for.
 │   ├── UnityAssetsAndMemoryInstructions.md
 │   ├── UnityDesignPatternsInstructions.md
 │   ├── UnityScriptableObjectInstructions.md
+│   ├── UnityArchitectureInstructions.md
+│   ├── UnityUniTaskInstructions.md
 │   ├── UnityScenesAndLifecycleInstructions.md
 │   ├── UnityUIToolkitInstructions.md
 │   ├── UnityUGUIInstructions.md

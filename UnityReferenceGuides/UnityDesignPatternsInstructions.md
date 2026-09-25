@@ -12,7 +12,7 @@ It's inspired by the ebook "Level up your code with design patterns and SOLID" I
 Intent is to provide a quick reference guide for when you need a refresher.
 It complements the [style guide](../UnityStyleGuide.md) by providing more detailed guidance on specific patterns and their usage in Unity projects.
 
-> **Cross-references:** For C# code style and naming conventions, see [UnityStyleGuide.md](../UnityStyleGuide.md). For UI Toolkit patterns including data binding and MVP, see [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md).
+> **Cross-references:** For C# code style and naming conventions, see [UnityStyleGuide.md](../UnityStyleGuide.md). For this project's architecture — MVC layering, VContainer dependency injection, the Singleton policy, MessagePipe, and R3 — see [UnityArchitectureInstructions.md](UnityArchitectureInstructions.md); where an older example in this guide differs, that guide wins. For UI Toolkit patterns including data binding and MVP, see [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md).
 
 Table of Contents
 =================
@@ -32,7 +32,7 @@ Table of Contents
     - [Enum-Based State Pattern](#enum-based-state-pattern)
 - [Template Method Pattern](#template-method-pattern)
 - [Singleton Pattern](#singleton-pattern)
-- [Service Locator / Dependency Injection](#service-locator--dependency-injection)
+- [Dependency Injection / Service Locator](#dependency-injection--service-locator)
 - [Composition over Inheritance](#composition-over-inheritance)
 - [Object Pooling](#object-pooling)
 - [Factory Pattern](#factory-pattern)
@@ -240,7 +240,7 @@ public interface IEntity
 - High-level modules should not depend on low-level modules; both should depend on abstractions
 - Depend on interfaces or abstract classes rather than concrete implementations
 
-> A [Service Locator](#service-locator--dependency-injection) is one way to decouple high-level systems from concrete dependencies at runtime.
+> [Dependency injection](#dependency-injection--service-locator) is how this project decouples high-level systems from concrete dependencies at runtime — see [Dependency injection: VContainer](UnityArchitectureInstructions.md#dependency-injection-vcontainer).
 
 ```csharp
 // Good: High-level logic depends on an abstraction
@@ -257,17 +257,18 @@ public class UnityAudioService : IAudioService
     }
 }
 
-// The controller depends on the interface, not the concrete class
-public class CombatController : MonoBehaviour
+// The controller depends on the interface, not the concrete class. VContainer supplies it
+// through the constructor - no static lookup, no Awake() resolve
+public class CombatController
 {
-    private IAudioService _audioService;
+    private readonly IAudioService _audioService;
 
-    private void Awake()
+    public CombatController(IAudioService audioService)
     {
-        _audioService = ServiceLocator.Resolve<IAudioService>();
+        _audioService = audioService;
     }
 
-    public void OnAttackLanded()
+    public void HandleAttackLanded()
     {
         _audioService.PlaySound("SwordHit");
     }
@@ -281,15 +282,15 @@ public class CombatController : MonoBehaviour
 
 ### Worked Example: A Tile-Based Strategy Game
 
-These patterns are actively used in this codebase. When generating new code, match these existing patterns for consistency.
+These patterns come from the tile-based strategy game this guide was written around. Rows marked **legacy** or **discouraged** are superseded by [UnityArchitectureInstructions.md](UnityArchitectureInstructions.md) for new code; match the rest for consistency. The `StaticGameEvents` calls in the examples further down belong to the legacy event hub.
 
 | Pattern | Location | Purpose |
 |---------|----------|---------|
-| [Observer Pattern](#observer-pattern) | `StaticGameEvents.cs` | Centralized event bus for inter-system communication |
+| [Observer Pattern](#observer-pattern) | `StaticGameEvents.cs` | Centralized static event bus — **legacy** as the cross-system default (MessagePipe replaces it) |
 | [State Pattern (Enum)](#enum-based-state-pattern) | `UIRootController.cs` | UI state machine with enum + switch |
 | [Template Method](#template-method-pattern) | `UIViewBase.cs` | Base class for all UI Toolkit views |
-| [Singleton](#singleton-pattern) | `UIRootController.cs` | Global access to UI state controller |
-| [Service Locator](#service-locator--dependency-injection) | `ServiceLocator.cs` / `DependencyInjector.cs` | Runtime dependency resolution |
+| [Singleton](#singleton-pattern) | `UIRootController.cs` | Global access to UI state controller — **discouraged**, see the Singleton policy |
+| [Dependency Injection](#dependency-injection--service-locator) | `ServiceLocator.cs` / `DependencyInjector.cs` | Runtime dependency resolution — the hand-rolled locator is **legacy**; VContainer is the default |
 | [Composition](#composition-over-inheritance) | `Tile` + `TileGarrison` etc. | Decomposing tile logic into focused components |
 | ScriptableObject Data | Various `*Config` classes | Static configuration data |
 | Data Binding | `[CreateProperty]` + `dataSource` | UI Toolkit automatic UI updates |
@@ -310,15 +311,68 @@ These patterns are documented for reference and may be useful for future feature
 
 ## Observer Pattern
 
-- ✅ Use the Observer pattern (via C# events) to decouple systems that don't need direct references to each other.
-- ✅ Use static events for game-wide broadcasts (e.g., turn ended, tile selected, resources changed).
-- ✅ Control event invocation through static methods to prevent external code from firing events inappropriately.
-- ✅ Subscribe in `OnEnable()` and always unsubscribe in `OnDisable()` to prevent memory leaks.
+- ✅ Implement the Observer pattern with R3: the publisher owns a private `Subject<T>` and exposes it as a
+  read-only `Observable<T>`; subscribers call `.Subscribe(...)` and attach the result to their own lifetime with
+  `.AddTo(...)`. See [Reactive callbacks: R3](UnityArchitectureInstructions.md#reactive-callbacks-r3).
+- ✅ Only the owner raises the event (`OnNext`). Exposing `Observable<T>` instead of the `Subject<T>` enforces this,
+  which is what the static invoke methods below did by hand.
+- ✅ Use plain `event Action` only where an assembly can't reference R3.
+- ✅ Prefer `Subject`/`Observable` over `UnityEvent`; keep `UnityEvent` for callbacks exposed to the Inspector.
+- ✅ Subscribe in `Start` with `.AddTo(this)`. For a handler that must stop while the component is disabled,
+  subscribe in `OnEnable` into a `CompositeDisposable` and `Clear()` it in `OnDisable`. Never `.AddTo(this)` in
+  `OnEnable` — re-enabling would add a duplicate.
+- ⚠️ For notifications *between* systems, the default is a DI-resolved interface, with MessagePipe for the
+  reserved cases — see [Communication](UnityArchitectureInstructions.md#communication-direct-references-by-default).
+  A static event hub is what MessagePipe replaces.
 - ❌ Avoid using events for tightly coupled systems where a direct method call is simpler.
 
 > See also: [Events](../UnityStyleGuide.md#events) in the style guide for naming conventions and subscription patterns.
 
-**Worked example — a centralized static event hub (`StaticGameEvents.cs`):**
+**Worked example — a tile announcing a population change:**
+
+```csharp
+// Publisher: owns the Subject, exposes only the Observable
+public class Tile : MonoBehaviour
+{
+    private readonly Subject<int> _populationChanged = new();
+    public Observable<int> OnPopulationChanged => _populationChanged;
+
+    private int _population;
+
+    public void ChangePopulation(int delta)
+    {
+        _population += delta;
+        _populationChanged.OnNext(_population);
+    }
+
+    private void OnDestroy() => _populationChanged.Dispose();
+}
+
+// Subscriber: attaches to its own lifetime
+public class TilePopulationLabel : MonoBehaviour
+{
+    [SerializeField] private Tile _tile;
+    [SerializeField] private TMP_Text _label;
+
+    private void Start()
+    {
+        _tile.OnPopulationChanged.Subscribe(HandlePopulationChanged).AddTo(this);
+    }
+
+    private void HandlePopulationChanged(int population)
+    {
+        _label.SetText("{0}", population);
+    }
+}
+```
+
+**Why this pattern:** the tile doesn't know the label exists, and the label's subscription cleans itself up when it
+is destroyed, so there is no `OnDisable` to forget. Compared with `event Action`, the subscription is an
+`IDisposable`, so it also composes with R3's operators (`Where`, `Throttle`, `DistinctUntilChanged`).
+
+**Legacy worked example — a centralized static event hub (`StaticGameEvents.cs`):**
+
+> ⚠️ This is the hub the Architecture guide's [MessagePipe](UnityArchitectureInstructions.md#messagepipe-the-reserved-cases) section replaces. It is kept for reading older code — don't add new cross-system events to it by default. It is also plain `event Action`, and its `OnTurnEnded`-style event names predate the current naming rules (an `event Action` is past tense without `On`; `On` + past tense names an R3 observable). Static events hold their subscribers for the life of the app, so a missed unsubscribe leaks (see [Troubleshooting](#troubleshooting)).
 
 ```csharp
 // StaticGameEvents.cs — Centralized event bus (actual project pattern)
@@ -363,7 +417,7 @@ public class Tile : MonoBehaviour
 }
 ```
 
-**Why this pattern:** A single static event class avoids scattered event declarations across multiple managers. The static invoke methods ensure events are only raised by authorized code paths, not by arbitrary subscribers.
+**Why this pattern:** A single static event class avoids scattered event declarations across multiple managers. The static invoke methods ensure events are only raised by authorized code paths, not by arbitrary subscribers. The trade-off is global mutable state with no owner, which is why the Architecture guide moves broadcast-style events to MessagePipe's typed brokers instead.
 
 ---
 
@@ -583,30 +637,30 @@ public class TileView : UIViewBase
 
 ## Singleton Pattern
 
-- ⚠️ Consider limiting the use of Singletons for smaller scale projects.
-- ✅ Use the Singleton pattern for global managers that need to be accessed from multiple places (e.g., AudioManager, GameManager).
-- ⚠️ Implement thread-safe lazy initialization to ensure the singleton instance is created only when needed.
-- ✅ Use the `_` prefix for the mutable static instance field, per the [style guide](../UnityStyleGuide.md#fields).
-- ✅ Provide a static Instance property for easy access to the singleton instance.
-- ✅ Use `DontDestroyOnLoad` to persist the singleton across scene loads if necessary.
+- ⚠️ Singletons are **discouraged** on this project. If one is genuinely needed, state its usage and the reason it was
+  necessary in a comment at the declaration — see
+  [Singleton policy](UnityArchitectureInstructions.md#singleton-policy).
+- ✅ Before reaching for one, check whether a service registered `Lifetime.Singleton` in the boot scope solves the same
+  problem: one instance, globally reachable, injected through a constructor instead of a static field. See
+  [Dependency injection: VContainer](UnityArchitectureInstructions.md#dependency-injection-vcontainer).
+- ✅ When a Singleton is still justified (e.g. a static bridge that a third-party API requires by contract), use the `_`
+  prefix for the mutable static instance field, per the [style guide](../UnityStyleGuide.md#fields).
+- ✅ Provide a static `Instance` property and destroy duplicates in `Awake`.
+- ✅ Use `DontDestroyOnLoad` to persist the singleton across scene loads only if it has to.
+- ✅ Reset the static in a `[RuntimeInitializeOnLoadMethod]` so a destroyed instance isn't kept alive across Play
+  sessions when Domain Reload is disabled.
 - ✅ Ensure proper cleanup of resources when the singleton is destroyed.
 
 ```csharp
-// Singleton pattern following the style guide's naming conventions
-public class UIRootController : MonoBehaviour
+// Singleton: the payment plugin's adapter contract requires a static entry point that nothing here
+// constructs, so there is no constructor for VContainer to inject into.
+// (State the usage and the reason at the declaration, as here.)
+public class PaymentCallbackBridge : MonoBehaviour
 {
     // Mutable static field: `_` prefix, same as instance fields
-    private static UIRootController _instance;
+    private static PaymentCallbackBridge _instance;
 
-    public static UIRootController Instance
-    {
-        get
-        {
-            if (_instance == null)
-                _instance = FindAnyObjectByType<UIRootController>();
-            return _instance;
-        }
-    }
+    public static PaymentCallbackBridge Instance => _instance;
 
     private void Awake()
     {
@@ -617,50 +671,66 @@ public class UIRootController : MonoBehaviour
             return;
         }
         _instance = this;
-    }
-}
-```
-
-```csharp
-// Singleton with DontDestroyOnLoad for cross-scene persistence
-public class AudioManager : MonoBehaviour
-{
-    private static AudioManager _instance;
-
-    public static AudioManager Instance
-    {
-        get
-        {
-            if (_instance == null)
-                _instance = FindAnyObjectByType<AudioManager>();
-            return _instance;
-        }
-    }
-
-    private void Awake()
-    {
-        if (_instance != null && _instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        _instance = this;
         DontDestroyOnLoad(gameObject);
+    }
+
+    private void OnDestroy()
+    {
+        if (_instance == this)
+            _instance = null;
+    }
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStatics()
+    {
+        _instance = null;
     }
 }
 ```
 
 ---
 
-## Service Locator / Dependency Injection
+## Dependency Injection / Service Locator
 
-- ✅ Use a Service Locator to decouple systems from concrete dependencies, improving testability and flexibility.
+- ✅ Default: constructor injection through VContainer. A service is a constructor parameter, registered once in a
+  `LifetimeScope` — not something a class pulls from a static registry. Full pattern in
+  [Dependency injection: VContainer](UnityArchitectureInstructions.md#dependency-injection-vcontainer).
+- ✅ Depend on interfaces (`IAudioService`), not concrete classes — the
+  [Dependency Inversion Principle](#dependency-inversion-principle) applied.
+- ⚠️ A hand-rolled Service Locator is **legacy** here. It is kept below for reading older code and for a project with
+  no DI container. It hides dependencies (any class can resolve anything), fails at runtime rather than at
+  construction, and needs manual cleanup per scene.
+
+```csharp
+// Constructor injection - the dependencies are visible in the signature
+public class RecruitmentController : IRecruitmentController
+{
+    private readonly IGameResources _gameResources;
+    private readonly IGameMapService _gameMapService;
+
+    public RecruitmentController(IGameResources gameResources, IGameMapService gameMapService)
+    {
+        _gameResources = gameResources;
+        _gameMapService = gameMapService;
+    }
+}
+
+// Registered once, in the scope's Configure
+builder.Register<IGameResources, GameResources>(Lifetime.Singleton);
+builder.Register<IGameMapService, GameMapService>(Lifetime.Singleton);
+builder.Register<IRecruitmentController, RecruitmentController>(Lifetime.Scoped);
+```
+
+### Legacy: a hand-rolled Service Locator
+
+If a project has no DI container and uses a locator anyway:
+
 - ✅ Register services during `Awake()` in a centralized injector so they are available by the time `Start()` runs.
 - ✅ Resolve dependencies in `Awake()` of consuming classes.
 - ✅ Clear the registry in `OnDestroy()` to prevent stale references across scene loads.
 - ⚠️ Avoid overusing the Service Locator — it can obscure dependencies if every class resolves everything through it.
 
-**Worked example — a `ServiceLocator` for runtime dependency resolution:**
+**Legacy worked example — a `ServiceLocator` for runtime dependency resolution:**
 
 ```csharp
 // ServiceLocator.cs — Lightweight service registry (actual project code)
@@ -899,7 +969,7 @@ public class ArmyController : MonoBehaviour
 {
     [SerializeField] private List<ArmyUnitData> _activeUnits = new();
 
-    public void RecruitUnit(ArmyUnitSO unitData)
+    public void RecruitUnit(ArmyUnitConfig unitData)
     {
         // Factory logic: create runtime data from static configuration
         var newUnit = new ArmyUnitData(unitData);
@@ -1097,7 +1167,13 @@ The static field kept a reference to a destroyed object. Reset it in a
 
 **An event fires twice.**
 Subscribed in both `Awake` and `OnEnable`, so re-enabling adds a second handler. Subscribe only in
-`OnEnable` and unsubscribe in `OnDisable`.
+`OnEnable` and unsubscribe in `OnDisable`. The R3 version of the same bug is `.AddTo(this)` inside
+`OnEnable`: it isn't undone on disable, so each re-enable adds a subscription. Subscribe in `Start`, or clear
+a `CompositeDisposable` in `OnDisable`.
+
+**`ObjectDisposedException` from a Subject.**
+The owner disposed it in `OnDestroy`, and something raised or subscribed afterwards. Only the owner should call
+`OnNext`, and only while it is alive; a subscriber that may outlive the publisher must not subscribe to it late.
 
 **An event handler runs on a destroyed object.**
 A missed unsubscribe on a static or long-lived event. The publisher is holding the delegate — and
@@ -1112,13 +1188,15 @@ always visible immediately.
 Something took an object and never released it. Set `collectionCheck: true` in development — it
 throws when an object is released twice, which usually reveals the leak.
 
-**A service resolves to null through a Service Locator.**
+**A service resolves to null through the legacy Service Locator.**
 Registration order. The consumer's `Awake` ran before the provider's. Register in a bootstrap scene
-that loads first, or resolve lazily in `Start` rather than `Awake`.
+that loads first, or resolve lazily in `Start` rather than `Awake`. VContainer doesn't have this failure
+mode — a missing registration throws a `VContainerException` naming the type instead of returning null.
 
 ## Additional Resources
 
 - [Level Up Your Code with Design Patterns and SOLID](https://unity.com/resources/design-patterns-solid-ebook) — Unity ebook
 - [UnityStyleGuide.md](../UnityStyleGuide.md) — C# style guide, naming conventions, and coding patterns
+- [UnityArchitectureInstructions.md](UnityArchitectureInstructions.md) — MVC layering, VContainer, Singleton policy, MessagePipe, R3
 - [UnityUIToolkitInstructions.md](UnityUIToolkitInstructions.md) — UI Toolkit reference including data binding and MVP pattern
 - [Game Programming Patterns](https://gameprogrammingpatterns.com/) — Robert Nystrom's free online book

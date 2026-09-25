@@ -1,13 +1,15 @@
 # Architecture Patterns
 
 > **Applies once a project has adopted VContainer** — this project's default for dependency
-> injection, per [`UnityTechStack.md`](../UnityCustomInstructions/UnityTechStack.md). MessagePipe and
-> R3 are separate, narrower add-ons within the same stack; each is called out below as optional where
-> it applies. Personal style preferences live in [`UnityStyleGuide.md`](../UnityStyleGuide.md).
+> injection, per [`UnityTechStack.md`](../UnityCustomInstructions/UnityTechStack.md). R3 is the same
+> stack's default for events and notifications; MessagePipe is a separate, narrower add-on, called out
+> below as optional where it applies. Personal style preferences live in
+> [`UnityStyleGuide.md`](../UnityStyleGuide.md).
 
 How this project structures a gameplay feature: the Model/View/Controller split, which layers need an
 interface and which don't, how services are wired together with VContainer, why Singletons are
-discouraged, and when to reach for MessagePipe or R3 instead of a direct reference.
+discouraged, how events and notifications are done with R3, and when to reach for MessagePipe instead of a
+direct reference.
 
 Table of contents:
 - [MVC layering](#mvc-layering)
@@ -239,18 +241,14 @@ public class MainMenuLifetimeScope : LifetimeScope
 
 - ⚠️ This repo's **older** reference material shows a hand-rolled `ServiceLocator` (a static registry,
   resolved by calling `ServiceLocator.Resolve<T>()` from `Awake`) in
-  [UnityDesignPatternsInstructions.md](UnityDesignPatternsInstructions.md), and a `ServiceLocator.Unregister(this)`
-  call in `AGENTS.md`'s `OnDestroy` example. Both predate this guide. VContainer's constructor
-  injection is the current default — a service is a constructor parameter, not something pulled from
-  a static locator at runtime.
-- ⚠️ **Unverified — check this before relying on it:** `EnqueueParent`'s documented behavior is that it
-  parents *any* `LifetimeScope` instantiated while its `using` block is open, not something tied
-  specifically to `SceneManager.LoadSceneAsync`. That should mean it works identically when the load is
-  triggered by `Addressables.LoadSceneAsync` instead, since both ultimately instantiate the new scene's
-  objects — including its `LifetimeScope` — through the same underlying Unity scene-load machinery. I
-  could not find a primary-source VContainer example combining `EnqueueParent` with
-  `Addressables.LoadSceneAsync` specifically to confirm this directly, so verify it behaves as expected
-  the first time this project combines the two, rather than assuming it from this guide alone.
+  [UnityDesignPatternsInstructions.md](UnityDesignPatternsInstructions.md). That predates this guide.
+  VContainer's constructor injection is the current default — a service is a constructor parameter,
+  not something pulled from a static locator at runtime.
+- ℹ️ `EnqueueParent` parents *any* `LifetimeScope` instantiated while its `using` block is open, not
+  something tied to `SceneManager.LoadSceneAsync` specifically, so it should work the same when the load
+  goes through `Addressables.LoadSceneAsync` (treated as working for now; not yet confirmed by a project
+  test). Keep the default `activateOnLoad: true` — a scene activated after the `using` block has
+  closed would miss the parent link.
 
 ---
 
@@ -394,36 +392,91 @@ public class AchievementController
 
 ## Reactive callbacks: R3
 
-Use [R3](https://github.com/Cysharp/R3) `Observable` in place of raw `Action`/`UnityEvent` callbacks,
-primarily for **deterministic subscription lifecycle management**, not for a raw allocation win over
-`Action` (R3's allocation advantage is measured against legacy UniRx, not against plain C# delegates —
-a `Subscribe()` call still allocates; the real gain is that cleanup is automatic via `AddTo()` instead
-of something to remember in `OnDestroy`).
+[R3](https://github.com/Cysharp/R3) is this project's default for events and notifications, and the way the
+Observer pattern is implemented here (see
+[Observer Pattern](UnityDesignPatternsInstructions.md#observer-pattern)). A publisher owns a private
+`Subject<T>` and exposes it as `Observable<T>`; a subscriber attaches the subscription to its own lifetime with
+`AddTo()`. The gain is deterministic cleanup and composition, not a raw allocation win over `Action` (R3's
+allocation advantage is measured against legacy UniRx, not against plain C# delegates — a `Subscribe()` call
+still allocates).
 
-- ✅ This doesn't replace this repo's general `event Action`/`Action<T>` guidance for code-only events
-  — see [Events](../UnityStyleGuide.md#events). Reach for R3 specifically when a subscription's
-  cleanup would otherwise need to be tracked by hand.
-- ✅ Subscribe and immediately attach the subscription to the object's lifetime: `.AddTo(this)`
-  (component-scoped) or a `CompositeDisposable`/`DisposableBag` for manually-scoped groups.
+- ✅ Plain `event Action`/`Action<T>` is the fallback only where an assembly can't reference R3 — see
+  [Events](../UnityStyleGuide.md#events).
+- ✅ Expose `Observable<T>`, keep the `Subject<T>` private. Only the owner calls `OnNext`.
+- ✅ Subscribe and immediately attach the subscription to a lifetime: `.AddTo(this)` (component-scoped, ends on
+  destroy), or a `DisposableBag` for a manually-scoped group (e.g. in a plain C# class):
+  `.AddTo(ref _subscriptions)`, then `_subscriptions.Dispose()` in that class's `Dispose()`.
+- ⚠️ `DisposableBag` is a struct: keep the field non-`readonly`, add with `AddTo(ref _bag)`, and never copy it. It
+  has no `Remove` and isn't thread-safe. `Clear()` drops its array, so the next `Add` allocates a new one — which
+  is why the per-enable case below uses `CompositeDisposable`, whose `Clear()` keeps its backing list.
+- ⚠️ R3 and MessagePipe each define a `DisposableBag` (R3's is a struct, MessagePipe's a static class with
+  `CreateBuilder()`). A file that imports both namespaces needs an alias or the full name.
+- ℹ️ Called from `Start`, the object is active, so `.AddTo(this)` registers on `destroyCancellationToken` and adds
+  nothing to the GameObject. It only falls back to adding a hidden `ObservableDestroyTrigger` component when the
+  object is inactive in the hierarchy.
+- ❌ Never `.AddTo(this)` inside `OnEnable`. It isn't undone on disable, so every re-enable adds a duplicate.
+  Subscribe in `Start`, or — for a handler that must stop while disabled — subscribe in `OnEnable` into a
+  `CompositeDisposable` that `OnDisable` `Clear()`s.
+- ✅ The owner disposes its `Subject` in `OnDestroy`. Raising or subscribing after `Dispose()` throws
+  `ObjectDisposedException`, so only the owner should ever raise it.
+- ✅ For state that a late subscriber also needs (current value plus changes), use `ReactiveProperty<T>` instead of
+  a `Subject<T>`.
+- ✅ Prefer `Subject`/`Observable` over `UnityEvent` for every code-driven event. `UnityEvent` is only for callbacks
+  exposed to the Inspector for designers to wire.
 - ✅ Prefer `.AsObservable(this.destroyCancellationToken)` on a `UnityEvent` over manual `+=`/`-=` in
   `OnEnable`/`OnDisable`.
 - ✅ Use R3's composition operators (`Where`, `Select`, `Throttle`, `DistinctUntilChanged`) instead of
   hand-rolled filtering/debouncing logic inside a callback body.
+- ℹ️ A `Subject` belongs to one publisher object. For ownerless, broadcast-style events use
+  [MessagePipe](#messagepipe-the-reserved-cases) instead, and only in the reserved cases.
 
 ```csharp
+// Publisher: owns the Subject, exposes only the Observable
+public class Health : MonoBehaviour
+{
+    private readonly Subject<int> _healthChanged = new();
+    public Observable<int> OnHealthChanged => _healthChanged;
+
+    private int _current;
+
+    public void ApplyDamage(int amount)
+    {
+        _current -= amount;
+        _healthChanged.OnNext(_current);
+    }
+
+    private void OnDestroy() => _healthChanged.Dispose();
+}
+
+// Subscriber: attaches to its own lifetime, no matching cleanup to remember
+public class HealthBarView : MonoBehaviour
+{
+    [SerializeField] private Health _health;
+
+    private void Start()
+    {
+        _health.OnHealthChanged.Subscribe(HandleHealthChanged).AddTo(this);
+    }
+
+    private void HandleHealthChanged(int value) { /* update the bar */ }
+}
+```
+
+```csharp
+// Manually-scoped group of subscriptions (e.g. a Controller-facing View wiring several inputs)
 public class JumpButtonView : MonoBehaviour
 {
     [SerializeField] private Button _jumpButton;
-    private readonly CompositeDisposable _disposables = new();
+    private DisposableBag _disposables;   // struct: not readonly, never copied
 
     private void Start()
     {
         _jumpButton.OnClickAsObservable()
-            .Subscribe(_ => OnJumpRequested())
-            .AddTo(_disposables);
+            .Subscribe(_ => HandleJumpRequested())
+            .AddTo(ref _disposables);
     }
 
-    private void OnJumpRequested() { /* delegate to Controller */ }
+    private void HandleJumpRequested() { /* delegate to Controller */ }
 
     private void OnDestroy() => _disposables.Dispose();
 }
@@ -446,7 +499,12 @@ public class JumpButtonView : MonoBehaviour
 | MessagePipe | MessagePipe used for a case that isn't one of the four reserved ones |
 | MessagePipe | A message type that's a shared generic envelope instead of one immutable struct per event |
 | MessagePipe | A subscription not collected in a `DisposableBag`/disposed on teardown |
-| R3 | A manual `+=`/`-=` subscription with no matching cleanup, where R3 would make it automatic |
+| R3 | A hand-written `event Action` in an assembly that can reference R3 |
+| R3 | A `UnityEvent` declared for a code-only event (a `Subject` unless the Inspector wires it) |
+| R3 | A `DisposableBag` in a `readonly` field, or copied by value |
+| R3 | A `Subject<T>` exposed publicly instead of as `Observable<T>`, or never disposed by its owner |
+| R3 | `.AddTo(this)` inside `OnEnable` (duplicates on every re-enable) |
+| R3 | A manual `+=`/`-=` subscription to a project event with no matching cleanup |
 
 ---
 
