@@ -433,8 +433,10 @@ private static void ResetStatics()
 
 **uGUI** (this project's default, per `UnityCustomInstructions/UnityTechStack.md`) — split canvases by
 update frequency; turn off `Raycast Target` on non-interactive graphics; never nest layout groups;
-never put an `Animator` on UI; disable the `Canvas` component rather than the GameObject to hide a
-screen; `RectMask2D` over `Mask`; pool list rows.
+never put an `Animator` on UI; hide a screen with a `CanvasGroup` (alpha 0, not interactable, no raycasts)
+rather than `SetActive` — unless the hidden screen runs heavy per-frame logic that must stop; set numbers
+with TMP `SetText("{0}", value)`, not `.text = value.ToString()`; consume `onClick` with
+`OnClickAsObservable()`, not `AddListener`; `RectMask2D` over `Mask`; pool list rows.
 
 **UI Toolkit** (secondary — only if the project switches to it) — kebab-case BEM for UXML `name` and
 `class` (`block__element--modifier`). Use `AddToClassList` / `EnableInClassList`, never

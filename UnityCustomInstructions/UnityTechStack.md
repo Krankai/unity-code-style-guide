@@ -20,7 +20,7 @@
 | UI | uGUI (Canvas/Image/TextMeshPro) | UI Toolkit (UXML/USS), IMGUI for runtime UI |
 | Rendering | Universal Render Pipeline (URP 17.3) | Built-in Render Pipeline, HDRP |
 | Async | UniTask (Cysharp) | `Awaitable`, coroutines except where per-frame iteration is genuinely needed |
-| Dependency injection | VContainer — constructor injection, one root `LifetimeScope` per scene | Hand-rolled `ServiceLocator`, manually `new`ing services |
+| Dependency injection | VContainer — constructor injection; a boot-scene `LifetimeScope` for app-lifetime services, a child scope per scene | Hand-rolled `ServiceLocator`, manually `new`ing services |
 | Messaging | MessagePipe — reserved for narrow cases only (see the Architecture guide) | A default/global event bus for everyday cross-system communication |
 | Events / Observer | R3 — `Subject<T>` exposed as `Observable<T>`, subscriptions attached with `AddTo()` | Hand-written `event Action` (fallback only where R3 can't be referenced), `UnityEvent` (except events exposed to the Inspector), UniRx (legacy) |
 | Pooling | `UnityEngine.Pool.ObjectPool<T>` | Hand-rolled pool implementations |
@@ -49,6 +49,10 @@
   Build Settings scenes. See
   [Dependency injection: VContainer](../UnityReferenceGuides/UnityArchitectureInstructions.md#dependency-injection-vcontainer)
   for how it fits the boot-scene loading pattern.
+- ℹ️ Invisible raycast targets (input blockers, drag areas) never use a plain transparent `Image`. On Unity 6.5+
+  use the built-in `RaycastReceiver`; on 6.0 – 6.4 use `NonDrawingGraphic` (the optional Unity-NonDrawingGraphic
+  package, or the hand-written class). See
+  [Raycast targets](../UnityReferenceGuides/UnityUGUIInstructions.md#raycast-targets).
 
 ## Packages
 
@@ -69,6 +73,8 @@ installed, or reinvent something a package already provides.
 | Odin Inspector | — | *(optional — fill in if used, remove if not)* |
 | `com.eflatun.scenereference` | — | *(optional — typed scene references, Addressables scenes preferred; fill in if used, remove if not)* |
 | EnhancedScroller (Asset Store, echo17) | — | *(optional — recycled scrolling lists for uGUI; fill in if used, remove if not)* |
+| ZString | — | *(optional — zero-allocation string formatting, incl. TMP `SetTextFormat`; fill in if used, remove if not)* |
+| `extensions.unity.nondrawinggraphic` (OpenUPM) | — | *(optional, **Unity 6.0 – 6.4 only** — `NonDrawingGraphic`: invisible uGUI raycast target with no draw call. On 6.5+ use the built-in `RaycastReceiver` and remove this row)* |
 
 ## Platform targets
 

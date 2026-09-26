@@ -7,7 +7,15 @@
 
 **Target: Unity 6.3.4f1 exclusively.** All APIs here are Unity 6.3. Do not use or reference pre-Unity 6 alternatives.
 
-> For C# code style within UI controllers, follow the conventions in `CLAUDE.md` (`_` prefix, PascalCase properties, Allman braces, etc.)
+> **Secondary UI system on this project.** [`UnityTechStack.md`](../UnityCustomInstructions/UnityTechStack.md)
+> makes **uGUI** the default for all runtime UI — see [UnityUGUIInstructions.md](UnityUGUIInstructions.md). Use this
+> guide only if a project switches to UI Toolkit, or for Editor tooling.
+
+> For C# code style within UI controllers, follow [`AGENTS.md`](../AGENTS.md) and the
+> [style guide](../UnityStyleGuide.md) (`_` prefix, PascalCase properties, Allman braces, etc.). Examples in this
+> guide predate some of those rules: they name handlers `On*` (`OnSubmitClicked`). Write `Handle*` in new code —
+> `On` + past tense now names an R3 observable — and follow the R3 default for your own events (see
+> [Events](../UnityStyleGuide.md#events)).
 
 Official documentation (fetch on demand if an API is not covered here):
 → https://docs.unity3d.com/6000.3/Documentation/Manual/UIElements.html
