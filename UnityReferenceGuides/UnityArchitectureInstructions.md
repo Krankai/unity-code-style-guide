@@ -165,19 +165,22 @@ manually or accessed through statics. This project uses a **persistent boot scop
 `LifetimeScope` that registers every app-lifetime singleton and outlives every scene, with each later
 scene's `LifetimeScope` parented to it.
 
-- ✅ **`BootScene` is the first scene the app ever loads.** Its `LifetimeScope` registers every
-  app-lifetime singleton service (`IAudioService`, `IAnalyticService`, and so on) and calls
-  `DontDestroyOnLoad(gameObject)` on itself in `Configure`, before anything else runs.
-- ✅ BootScene then loads the next scene with `LoadSceneMode.Single`. BootScene's own scene unloads,
-  but the root `LifetimeScope` GameObject already moved out via `DontDestroyOnLoad`, so it survives.
+- ✅ **`BootScene` is the first scene the app ever loads, and it is never unloaded.** Its `LifetimeScope`
+  registers every app-lifetime singleton service (`IAudioService`, `IAnalyticService`, and so on). Because the scene
+  stays loaded, the scope needs no `DontDestroyOnLoad` — this is the
+  [bootstrap scene pattern](UnityScenesAndLifecycleInstructions.md#the-bootstrap-scene-pattern).
+- ✅ BootScene loads the next scene **additively** (`LoadSceneMode.Additive`) and makes it the active scene. Never
+  `LoadSceneMode.Single` after boot: it would unload BootScene, and the services with it.
 - ✅ Every scene loaded after BootScene becomes a **child** of the boot scope, via
-  `LifetimeScope.EnqueueParent(...)` wrapped around the `SceneManager.LoadSceneAsync(...)` call that
-  loads it. A child scope resolves anything it doesn't register itself from its parent, so any later
-  scene can take `IAudioService` as a constructor dependency without re-registering it.
-- ⚠️ **This depends on BootScene genuinely being the first scene loaded, every time** — nothing in the
-  pattern itself enforces that. If something ever reloads BootScene mid-session (a "return to title"
-  flow gone wrong, for instance), guard `Configure` against running twice, or every app-lifetime
-  singleton gets registered a second time.
+  `LifetimeScope.EnqueueParent(...)` around the call that activates it. A child scope resolves anything it doesn't
+  register itself from its parent, so any later scene can take `IAudioService` as a constructor dependency without
+  re-registering it. Where the `using` block goes depends on `activateOnLoad` — see
+  [Parent link for the next scope](UnityScenesAndLifecycleInstructions.md#parent-link-for-the-next-scope).
+- ⚠️ **This depends on BootScene genuinely being the first scene loaded.** In the Editor,
+  `playModeStartScene` guarantees it — see
+  [Play always starts from the boot scene](UnityScenesAndLifecycleInstructions.md#play-always-starts-from-the-boot-scene).
+  If something loads BootScene a second time (a "return to title" flow gone wrong, for instance), the
+  `_hasConfigured` guard in `Configure` throws instead of registering every app-lifetime singleton twice.
 - ✅ Register an interface against its concrete implementation; consumers request the interface via
   constructor injection, the same as any other service.
 - ℹ️ **If this project uses [Eflatun.SceneReference](https://github.com/starikcetin/Eflatun.SceneReference)**
@@ -204,8 +207,6 @@ public class BootLifetimeScope : LifetimeScope
         }
         _hasConfigured = true;
 
-        DontDestroyOnLoad(gameObject);
-
         builder.Register<IAudioService, AudioService>(Lifetime.Singleton);
         builder.Register<IAnalyticService, AnalyticService>(Lifetime.Singleton);
     }
@@ -217,14 +218,20 @@ public class BootLifetimeScope : LifetimeScope
 
     private async UniTaskVoid TaskLoadMainMenu()
     {
+        SceneInstance mainMenu;
+
+        // activateOnLoad is true (the default), so the whole load call sits inside the block:
+        // the scene's scope is created whenever the load finishes
         using (LifetimeScope.EnqueueParent(this))
         {
             // _mainMenuScene.Address is only valid when the scene is marked Addressable in the
             // Inspector. Await the AsyncOperationHandle directly here, not .ToUniTask() - the same
             // Start()-ordering caveat UniTask documents for SceneManager.LoadSceneAsync applies to
             // Addressables.LoadSceneAsync too.
-            await Addressables.LoadSceneAsync(_mainMenuScene.Address, LoadSceneMode.Single);
+            mainMenu = await Addressables.LoadSceneAsync(_mainMenuScene.Address, LoadSceneMode.Additive);
         }
+
+        SceneManager.SetActiveScene(mainMenu.Scene);
     }
 }
 
@@ -247,8 +254,10 @@ public class MainMenuLifetimeScope : LifetimeScope
 - ℹ️ `EnqueueParent` parents *any* `LifetimeScope` instantiated while its `using` block is open, not
   something tied to `SceneManager.LoadSceneAsync` specifically, so it should work the same when the load
   goes through `Addressables.LoadSceneAsync` (treated as working for now; not yet confirmed by a project
-  test). Keep the default `activateOnLoad: true` — a scene activated after the `using` block has
-  closed would miss the parent link.
+  test). Where the block goes depends on `activateOnLoad`: with the default `true`, around the whole load call
+  (as above); with `false`, around `SceneInstance.ActivateAsync()` only, since that is when the scope is created.
+  A scene activated after the `using` block has closed would miss the parent link. See
+  [Additive scene loading](UnityScenesAndLifecycleInstructions.md#additive-scene-loading).
 
 ---
 
@@ -336,7 +345,7 @@ public class BootLifetimeScope : LifetimeScope
 {
     protected override void Configure(IContainerBuilder builder)
     {
-        // ... DontDestroyOnLoad, IAudioService, IAnalyticService, etc. - see Dependency injection
+        // ... IAudioService, IAnalyticService, etc. - see Dependency injection
 
         MessagePipeOptions options = builder.RegisterMessagePipe();
 
@@ -494,6 +503,7 @@ public class JumpButtonView : MonoBehaviour
 | DI | A service constructed with `new` outside a `LifetimeScope`, or resolved via a static locator |
 | DI | A scene's `LifetimeScope` with no `EnqueueParent` to the boot scope, so it can't resolve app-lifetime services |
 | DI | `BootLifetimeScope.Configure` with no guard against running twice |
+| DI | A scene loaded with `LoadSceneMode.Single` after boot, which unloads BootScene and its services |
 | Singleton | An `Instance` static with no comment stating why it was necessary |
 | Communication | A new global static event bus reached for by default, instead of a direct reference |
 | MessagePipe | MessagePipe used for a case that isn't one of the four reserved ones |

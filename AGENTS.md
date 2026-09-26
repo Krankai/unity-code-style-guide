@@ -319,8 +319,9 @@ public async UniTask TaskOpenDoor()
 - Every Controller has an interface. A View has one where feasible. A Model only when the data is
   more than trivial.
 - Wire services with VContainer constructor injection — never `new` a service, never a static locator.
-  A persistent boot scene's `LifetimeScope` (`DontDestroyOnLoad`) registers the app-lifetime
-  singletons; every later scene's scope is parented to it with `LifetimeScope.EnqueueParent`.
+  A boot scene that loads first and is never unloaded hosts the `LifetimeScope` that registers the
+  app-lifetime singletons; every later scene loads additively (never `Single`) and its scope is parented
+  to it with `LifetimeScope.EnqueueParent`.
 - Singletons (`Instance` statics) are discouraged. If one is unavoidable, state the reason in a
   comment at the declaration.
 - Talk to other systems through a directly injected interface. MessagePipe is optional, and only for
